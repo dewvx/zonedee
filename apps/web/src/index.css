@@ -1,0 +1,21 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', 'Noto Sans Thai', 'Leelawadee UI', system-ui, sans-serif;
+  --color-panel: #12161f;
+  --color-surface: #0b0e14;
+  --color-line: #232937;
+  --color-bull: #22c55e;
+  --color-bear: #ef4444;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-surface);
+  color: #d6dae3;
+}

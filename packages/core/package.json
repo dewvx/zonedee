@@ -1,0 +1,18 @@
+{
+  "name": "@zonedee/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "หัวใจของ zonedee: ฟังก์ชันล้วน (pure) สำหรับ indicator, โครงสร้างราคา, แนวรับต้าน, ท่าเทรด — ใช้ร่วมกันทั้งกราฟและ backtest",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.5"
+  }
+}

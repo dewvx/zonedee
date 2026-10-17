@@ -1,0 +1,19 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+
+# ข้อมูลราคาในเครื่อง (ไฟล์ใหญ่ ไม่ขึ้น git)
+data/
+*.sqlite
+*.sqlite-journal
+*.db
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
