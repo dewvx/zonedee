@@ -29,33 +29,51 @@ export function detectOrderBlocks(
   config: Partial<DetectorConfig> = {},
   asOf: number = candles.length - 1,
 ): OrderBlock[] {
-  const cfg = { ...DEFAULTS, ...config };
   if (asOf < 0 || candles.length === 0) return [];
   const data = asOf < candles.length - 1 ? candles.slice(0, asOf + 1) : candles;
-  const atrs = atr(data, cfg.atrPeriod);
+  return detectOrderBlockHistory(data, config)
+    .filter((o) => o.brokenIndex === null)
+    .map(({ testedIndex, brokenIndex: _b, ...o }) => ({ ...o, state: testedIndex === null ? 'fresh' : 'tested' }));
+}
 
+/** OB พร้อมประวัติ (ใช้ในท่าเทรด/backtest) */
+export interface OrderBlockLife extends Omit<OrderBlock, 'state'> {
+  testedIndex: number | null;
+  /** แท่งที่ปิดทะลุ OB = ทิ้ง */
+  brokenIndex: number | null;
+}
+
+/** OB ทุกตัวที่เคยเกิด พร้อมแท่งที่ถูกแตะ/ถูกทะลุ — causal */
+export function detectOrderBlockHistory(
+  candles: readonly Candle[],
+  config: Partial<DetectorConfig> = {},
+): OrderBlockLife[] {
+  const cfg = { ...DEFAULTS, ...config };
+  const atrs = atr(candles, cfg.atrPeriod);
   const byBreak = new Map<number, StructureEvent[]>();
-  for (const e of detectStructure(data, cfg)) {
+  for (const e of detectStructure(candles, cfg)) {
     const list = byBreak.get(e.breakIndex) ?? [];
     list.push(e);
     byBreak.set(e.breakIndex, list);
   }
 
-  let obs: (OrderBlock & { dead?: boolean })[] = [];
-  for (let i = 0; i < data.length; i++) {
-    const bar = data[i]!;
-    for (const ob of obs) {
-      if (ob.dead || ob.createdIndex >= i) continue;
-      if (ob.direction === 'bull' ? bar.close < ob.bottom : bar.close > ob.top) ob.dead = true;
-      else if (ob.state === 'fresh' && bar.low <= ob.top && bar.high >= ob.bottom) ob.state = 'tested';
+  const all: OrderBlockLife[] = [];
+  let alive: OrderBlockLife[] = [];
+  for (let i = 0; i < candles.length; i++) {
+    const bar = candles[i]!;
+    for (const ob of alive) {
+      if (ob.createdIndex >= i) continue;
+      if (ob.direction === 'bull' ? bar.close < ob.bottom : bar.close > ob.top) ob.brokenIndex = i;
+      else if (ob.testedIndex === null && bar.low <= ob.top && bar.high >= ob.bottom) ob.testedIndex = i;
     }
+    alive = alive.filter((o) => o.brokenIndex === null);
     for (const e of byBreak.get(i) ?? []) {
-      const k = findObCandle(data, e);
-      const c = data[k]!;
+      const k = findObCandle(candles, e);
+      const c = candles[k]!;
       const impulse = e.direction === 'bull' ? bar.close - c.low : c.high - bar.close;
       const a = atrs[i];
       if (cfg.obImpulseAtr > 0 && (a == null || impulse < cfg.obImpulseAtr * a)) continue;
-      obs.push({
+      const ob: OrderBlockLife = {
         id: `ob-${e.direction}-${k}`,
         direction: e.direction,
         top: c.high,
@@ -63,12 +81,14 @@ export function detectOrderBlocks(
         index: k,
         startTime: c.time,
         createdIndex: i,
-        state: 'fresh',
-      });
+        testedIndex: null,
+        brokenIndex: null,
+      };
+      all.push(ob);
+      alive.push(ob);
     }
-    if (obs.length > 200) obs = obs.filter((o) => !o.dead);
   }
-  return obs.filter((o) => !o.dead).map(({ dead: _dead, ...o }) => o);
+  return all;
 }
 
 function findObCandle(data: readonly Candle[], e: StructureEvent): number {

@@ -60,3 +60,17 @@ export async function fetchYahoo(symbol: string, tf: Timeframe, from: Date, to: 
   });
   return mapYahooQuotes(result.quotes, tf);
 }
+
+/** รายชื่อหุ้นจาก screener สำเร็จรูปของ Yahoo (เช่น small_cap_gainers) */
+export async function yahooScreener(
+  id: 'small_cap_gainers' | 'aggressive_small_caps' | 'day_gainers' | 'most_actives' | 'most_shorted_stocks',
+  count: number,
+): Promise<{ symbol: string; name: string; marketCap: number | null }[]> {
+  client ??= new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+  const res = await client.screener({ scrIds: id, count });
+  return res.quotes.map((q) => ({
+    symbol: q.symbol,
+    name: q.shortName ?? q.longName ?? q.symbol,
+    marketCap: typeof q.marketCap === 'number' ? q.marketCap : null,
+  }));
+}

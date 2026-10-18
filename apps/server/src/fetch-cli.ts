@@ -12,7 +12,7 @@ import { parseArgs } from 'node:util';
 import { FETCHERS } from './fetchers';
 import { fetchSymbol } from './fetch-job';
 import { CandleStore, DEFAULT_DB_PATH } from './store';
-import { SYMBOLS } from './symbols';
+import { UserSymbolStore, createSymbolRegistry } from './user-symbols';
 
 const { values } = parseArgs({
   options: {
@@ -25,6 +25,10 @@ const { values } = parseArgs({
 });
 
 const wanted = values.symbol?.split(',').map((s) => s.trim().toUpperCase());
+// รวมหุ้นที่เพิ่มเองจากในแอป (หน้าสแกน / watchlist)
+const userSymbols = new UserSymbolStore(DEFAULT_DB_PATH);
+const SYMBOLS = createSymbolRegistry(userSymbols).list();
+userSymbols.close();
 const targets = SYMBOLS.filter(
   (s) => (!wanted || wanted.includes(s.symbol)) && (!values.market || s.market === values.market),
 );

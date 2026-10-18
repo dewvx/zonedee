@@ -1,4 +1,17 @@
-import type { Candle, ContractSpec, Market, Timeframe } from '@zonedee/core';
+import type {
+  ScanOptions,
+  StockScan,
+  WatchMetrics,
+  BacktestResult,
+  Candle,
+  ContractSpec,
+  DetectorConfig,
+  Market,
+  ParamSpec,
+  ParamValue,
+  Stats,
+  Timeframe,
+} from '@zonedee/core';
 
 export type DataSourceName = 'dukascopy' | 'yahoo' | 'mt5';
 
@@ -13,6 +26,8 @@ export interface SymbolSummary {
   data: { tf: Timeframe; count: number; first: number; last: number } | null;
   /** ช่วงข้อมูลที่มีของแต่ละ TF */
   coverage: Partial<Record<Timeframe, { first: number; last: number; count: number }>>;
+  /** หุ้นที่ผู้ใช้เพิ่มเอง (ลบได้) */
+  user?: boolean;
 }
 
 export interface CandlesResponse {
@@ -32,7 +47,7 @@ export interface FetchRunResult {
   durationMs: number;
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+export async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -47,6 +62,10 @@ export const fetchCandles = (symbol: string, tf: Timeframe, count = 1000, before
   request<CandlesResponse>(
     `/api/candles?symbol=${symbol}&tf=${tf}&count=${count}${before !== undefined ? `&before=${before}` : ''}`,
   );
+
+/** แท่งตั้งแต่เวลา `after` ไป (replay) */
+export const fetchCandlesAfter = (symbol: string, tf: Timeframe, after: number, count = 200) =>
+  request<CandlesResponse>(`/api/candles?symbol=${symbol}&tf=${tf}&count=${count}&after=${after}`);
 
 /** สั่ง server ดึงข้อมูลใหม่จากแหล่ง (เหมือน npm run fetch -- --symbol X) */
 export const triggerFetch = (symbol: string) =>
@@ -64,3 +83,246 @@ export interface ContractInfo {
 }
 
 export const fetchContract = (symbol: string) => request<ContractInfo>(`/api/contract?symbol=${symbol}`);
+
+// ── Backtest (Phase 6–7) ──────────────────────────────────────────────
+
+export interface StrategyInfo {
+  id: string;
+  name: string;
+  source: string;
+  description: string;
+  timeframes: Timeframe[];
+  params: ParamSpec[];
+}
+
+export const fetchStrategies = () => request<StrategyInfo[]>('/api/strategies');
+
+export interface BacktestRequest {
+  symbol: string;
+  tf: Timeframe;
+  strategy: string;
+  params?: Record<string, ParamValue>;
+  cfg?: Partial<DetectorConfig>;
+  from?: number;
+  to?: number;
+  spreadPoints?: number;
+  riskPct?: number;
+  initialBalance?: number;
+  maxBarsInTrade?: number;
+  oosFraction?: number;
+  baselineRuns?: number;
+}
+
+export interface BacktestMeta {
+  symbol: string;
+  tf: Timeframe;
+  strategy: string;
+  strategyName: string;
+  bars: number;
+  from: number | null;
+  to: number | null;
+  signals: number;
+  spreadPoints: number;
+  fineData: boolean;
+  durationMs: number;
+}
+
+export interface BacktestResponse {
+  meta: BacktestMeta;
+  result: BacktestResult;
+}
+
+export interface CompareRow {
+  strategy: string;
+  strategyName: string;
+  source: string;
+  signals: number;
+  stats: Stats;
+  outOfSample: Stats;
+  percentile: number | null;
+}
+
+export interface CompareResponse {
+  meta: Omit<BacktestMeta, 'strategy' | 'strategyName' | 'signals'>;
+  rows: CompareRow[];
+}
+
+const postJson = <T>(url: string, body: unknown) =>
+  request<T>(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+export const runBacktest = (req: BacktestRequest) => postJson<BacktestResponse>('/api/backtest', req);
+export const runCompare = (req: Omit<BacktestRequest, 'strategy'>) =>
+  postJson<CompareResponse>('/api/backtest', { ...req, strategy: 'all' });
+
+// ── Journal (Phase 8) ─────────────────────────────────────────────────
+
+export type JournalStatus = 'plan' | 'open' | 'closed' | 'cancelled';
+
+export interface JournalEntry {
+  id: number;
+  createdAt: number;
+  updatedAt: number;
+  symbol: string;
+  tf: Timeframe | null;
+  direction: 'long' | 'short';
+  status: JournalStatus;
+  entryTime: number | null;
+  entryPrice: number | null;
+  sl: number | null;
+  tp: number | null;
+  lots: number | null;
+  exitTime: number | null;
+  exitPrice: number | null;
+  pnl: number | null;
+  r: number | null;
+  strategy: string;
+  signalTime: number | null;
+  setup: string;
+  lesson: string;
+  emotion: string;
+  followedPlan: boolean | null;
+  tags: string[];
+  images: string[];
+}
+
+export type JournalInput = Partial<Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt' | 'r' | 'images'>>;
+
+export const fetchJournal = () => request<JournalEntry[]>('/api/journal');
+export const createJournal = (input: JournalInput & { image?: string }) => postJson<JournalEntry>('/api/journal', input);
+export const updateJournal = (id: number, input: JournalInput) =>
+  request<JournalEntry>(`/api/journal/${id}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+export const deleteJournal = async (id: number) => {
+  const res = await fetch(`/api/journal/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`ลบไม่ได้ (HTTP ${res.status})`);
+};
+export const addJournalImage = (id: number, dataUrl: string) =>
+  postJson<JournalEntry>(`/api/journal/${id}/images`, { dataUrl });
+export const removeJournalImage = (id: number, name: string) =>
+  request<JournalEntry>(`/api/journal/${id}/images/${name}`, { method: 'DELETE' });
+export const journalImageUrl = (name: string) => `/api/journal-images/${name}`;
+
+// ── แจ้งเตือน (Phase 9) ───────────────────────────────────────────────
+
+export type PriceCondition = 'cross-above' | 'cross-below' | 'touch';
+
+export interface AlertRule {
+  id: number;
+  createdAt: number;
+  updatedAt: number;
+  name: string;
+  enabled: boolean;
+  symbol: string;
+  tf: Timeframe;
+  kind: 'strategy' | 'price';
+  strategy: string;
+  params: Record<string, ParamValue>;
+  swingLength: number | null;
+  breakBy: 'close' | 'wick' | null;
+  condition: PriceCondition;
+  price: number | null;
+  once: boolean;
+  notifyLine: boolean;
+  lastCheckedBar: number | null;
+  lastFiredAt: number | null;
+  lastError: string | null;
+}
+
+export type AlertRuleInput = Partial<Omit<AlertRule, 'id' | 'createdAt' | 'updatedAt'>>;
+
+export interface AlertEvent {
+  id: number;
+  ruleId: number;
+  ruleName: string;
+  symbol: string;
+  tf: Timeframe;
+  barTime: number;
+  firedAt: number;
+  message: string;
+  signal: { direction: 'long' | 'short'; entryType: 'market' | 'limit'; entry: number; sl: number; tp: number; reason: string } | null;
+  strategy: string;
+  line: 'sent' | 'failed' | 'off' | 'capped';
+  lineError: string | null;
+}
+
+export interface AlertStatus {
+  line: { configured: boolean };
+  engine: { running: boolean; lastTick: number | null; lastTickMs: number | null; checked: number; fired: number; errors: string[] };
+  linePerDay: number;
+  lineSentToday: number;
+}
+
+const putJson = <T>(url: string, body: unknown) =>
+  request<T>(url, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const del = async (url: string) => {
+  const res = await fetch(url, { method: 'DELETE' });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+};
+
+export const fetchAlertRules = () => request<AlertRule[]>('/api/alerts/rules');
+export const createAlertRule = (input: AlertRuleInput) => postJson<AlertRule>('/api/alerts/rules', input);
+export const updateAlertRule = (id: number, input: AlertRuleInput) => putJson<AlertRule>(`/api/alerts/rules/${id}`, input);
+export const deleteAlertRule = (id: number) => del(`/api/alerts/rules/${id}`);
+export const fetchAlertEvents = (since = 0) => request<AlertEvent[]>(`/api/alerts/events?since=${since}`);
+export const clearAlertEvents = () => del('/api/alerts/events');
+export const fetchAlertStatus = () => request<AlertStatus>('/api/alerts/status');
+export const fetchLineQuota = () => request<{ limit: number | null; used: number }>('/api/alerts/line-quota');
+export const testLine = () => postJson<{ ok: true }>('/api/alerts/test-line', {});
+export const checkAlertsNow = () => postJson<AlertStatus['engine']>('/api/alerts/check', {});
+
+// ── หุ้น: เพิ่มเอง / watchlist / สแกน (Phase 10–11) ─────────────────────
+
+export const addUserSymbol = (symbol: string, description = '') =>
+  postJson<{ symbol: string }>('/api/user-symbols', { symbol, description });
+export const removeUserSymbol = (symbol: string) => del(`/api/user-symbols/${symbol}`);
+
+export interface WatchItem {
+  id: number;
+  symbol: string;
+  shares: number | null;
+  avgCost: number | null;
+  dcaMonthly: number | null;
+  note: string;
+  addedAt: number;
+}
+export interface WatchRow extends WatchItem {
+  metrics: WatchMetrics | null;
+  value: number | null;
+  cost: number | null;
+  pnl: number | null;
+  pnlPct: number | null;
+}
+export type WatchInput = Partial<Omit<WatchItem, 'id' | 'addedAt'>>;
+
+export const fetchWatchlist = () => request<WatchRow[]>('/api/watchlist');
+export const addWatch = (input: WatchInput) => postJson<WatchItem>('/api/watchlist', input);
+export const updateWatch = (id: number, input: WatchInput) => putJson<WatchItem>(`/api/watchlist/${id}`, input);
+export const removeWatch = (id: number) => del(`/api/watchlist/${id}`);
+export const refreshWatchlist = () => postJson<{ updated: number; errors: string[] }>('/api/watchlist/refresh', {});
+
+export interface ScanSource {
+  id: string;
+  label: string;
+}
+export interface ScanRow {
+  symbol: string;
+  name: string;
+  marketCap: number | null;
+  scan: StockScan | null;
+  error: string | null;
+}
+export interface ScanResponse {
+  source: string;
+  scannedAt: number;
+  rows: ScanRow[];
+  error: string | null;
+}
+export const fetchScanSources = () => request<ScanSource[]>('/api/scan/sources');
+export const runScan = (req: { source: string; symbols?: string[]; count?: number; options?: Partial<ScanOptions> }) =>
+  postJson<ScanResponse>('/api/scan', req);

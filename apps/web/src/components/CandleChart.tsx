@@ -44,6 +44,18 @@ interface Props {
   onChartClick?: (price: number, time: number) => void;
   /** ลากเส้นที่ draggable → ราคาใหม่ */
   onLineDrag?: (id: string, price: number) => void;
+  /** ตอน reset ให้ซูมไปช่วงแท่งนี้ (index ใน candles) แทน 180 แท่งล่าสุด — ใช้ดูเทรดย้อนหลัง/replay */
+  focus?: { from: number; to: number };
+  /** true = คงช่วงตามลำดับแท่ง (logical) แทนช่วงเวลา — ใช้ตอนแท่งเพิ่มทางขวาอย่างเดียว (replay) ให้แท่งใหม่โผล่ในที่ว่าง */
+  appendOnly?: boolean;
+  /** รับ handle ไว้สั่งถ่ายรูปกราฟ (journal) */
+  apiRef?: { current: CandleChartHandle | null };
+}
+
+/** สิ่งที่ภายนอกสั่งกราฟได้ (ผ่าน prop apiRef) */
+export interface CandleChartHandle {
+  /** รูปกราฟปัจจุบัน (รวมกล่อง/เส้นที่วาด) เป็น data URL */
+  screenshot: () => string;
 }
 
 export interface ChartPriceLine {
@@ -78,6 +90,9 @@ export function CandleChart({
   overlays = [],
   markers = [],
   priceLines = [],
+  focus,
+  appendOnly = false,
+  apiRef,
   onChartClick,
   onLineDrag,
 }: Props) {
@@ -141,6 +156,7 @@ export function CandleChart({
       wickDownColor: BEAR,
     });
     chartRef.current = chart;
+    if (apiRef) apiRef.current = { screenshot: () => chart.takeScreenshot().toDataURL('image/png') };
 
     const overlay = new OverlayPrimitive();
     candleSeriesRef.current.attachPrimitive(overlay);
@@ -232,6 +248,7 @@ export function CandleChart({
       priceLineApisRef.current = [];
       chart.remove();
       chartRef.current = null;
+      if (apiRef) apiRef.current = null;
       candleSeriesRef.current = null;
       emaSeriesRef.current = [];
       lastResetKeyRef.current = null;
@@ -248,7 +265,8 @@ export function CandleChart({
 
     const isReset = lastResetKeyRef.current !== resetKey;
     // จำช่วงเวลาที่ผู้ใช้กำลังดูไว้ (กันกราฟกระโดดตอนโหลดแท่งเก่าเพิ่ม / อัปเดตแท่งล่าสุด)
-    const keepRange = isReset ? null : chart.timeScale().getVisibleRange();
+    const keepRange = isReset || appendOnly ? null : chart.timeScale().getVisibleRange();
+    const keepLogical = !isReset && appendOnly ? chart.timeScale().getVisibleLogicalRange() : null;
 
     series.applyOptions({
       priceFormat: { type: 'price', precision: digits, minMove: 1 / 10 ** digits },
@@ -288,13 +306,15 @@ export function CandleChart({
     if (candles.length === 0) return;
     if (isReset) {
       lastResetKeyRef.current = resetKey;
-      chart.timeScale().setVisibleLogicalRange({
-        from: Math.max(0, candles.length - INITIAL_VISIBLE_BARS),
-        to: candles.length + 5,
-      });
+      chart.timeScale().setVisibleLogicalRange(
+        focus ?? { from: Math.max(0, candles.length - INITIAL_VISIBLE_BARS), to: candles.length + 5 },
+      );
+    } else if (keepLogical) {
+      chart.timeScale().setVisibleLogicalRange(keepLogical);
     } else if (keepRange) {
       chart.timeScale().setVisibleRange(keepRange);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- focus ใช้เฉพาะตอน reset
   }, [candles, digits, emas, resetKey, lastBarOpen]);
 
   // ชั้นที่วาดทับ (หลังตั้งข้อมูลแท่งแล้ว เพื่อให้หาพิกัดเวลาได้)

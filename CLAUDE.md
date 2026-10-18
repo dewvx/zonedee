@@ -12,6 +12,7 @@
 ```bash
 npm install          # ติดตั้งครั้งแรก (Node >= 22.13 เพราะใช้ node:sqlite)
 npm run fetch        # ดึงราคาลง data/zonedee.sqlite (ต่อจากของเดิม) — ดูตัวเลือกใน apps/server/src/fetch-cli.ts
+npm run backtest -- --tf M5 --strategy sk-fibo   # backtest จากข้อมูลใน DB (--all เทียบทุกท่า, --list ดูท่า)
 npm run dev          # server (:3001) + web (:5173) พร้อมกัน
 npm test             # เทสต์ทุก workspace (vitest)
 npm run typecheck    # เช็ก type ทุก workspace
@@ -21,10 +22,22 @@ npm run build        # build web
 ## โครงสร้าง
 
 ```
-packages/core/   ฟังก์ชันล้วน: types, indicators, structure, zones, risk (strategies มาใน Phase 6–7)
+packages/core/   ฟังก์ชันล้วน: types, indicators, structure, zones, risk, backtest, strategies
                  ไม่แตะ DB / network / DOM — ใช้ร่วมกันทั้งกราฟและ backtest
+  src/backtest/      engine (simulate), stats, baseline (เทียบเข้าสุ่ม), run (รวมทุกอย่าง)
+  src/strategies/    ท่าเทรด — 1 ไฟล์ต่อท่า + common.ts (params ร่วม, ltfConfirm) + index.ts (STRATEGIES)
+  src/mtf.ts         htfView: แท่ง TF ใหญ่ + ใช้ได้ตั้งแต่แท่ง TF เล็กไหน (กันแอบดูอนาคต)
+  src/scan/          scanStock (หุ้นซิ่ง D1), watchMetrics (watchlist ลงทุน)
 apps/server/     Express 5 — API + ดึง/เก็บข้อมูล
-  src/app.ts         routes: /api/symbols, /api/candles (before = โหลดย้อนหลัง), POST /api/fetch
+  src/app.ts         routes ทั้งหมด: symbols, candles (before/after), fetch, contract, strategies, backtest,
+                     journal, alerts, user-symbols, watchlist, scan
+  src/backtest.ts    โหลดข้อมูลจาก SQLite + M1 แยก SL/TP + spread → รันท่า / เทียบทุกท่า
+  src/backtest-cli.ts npm run backtest
+  src/journal.ts     Journal (ตาราง journal + รูปใน data/journal/)
+  src/alerts/        แจ้งเตือน: store (กฎ/เหตุการณ์), engine (ตรวจทุก 30 วิ เมื่อแท่งปิด), line (Messaging API)
+  src/scanner.ts     สแกนหุ้นซิ่ง (Yahoo screener + D1 cache 10 นาที)
+  src/watchlist.ts   watchlist ลงทุน + ตัวเลขพอร์ต
+  src/user-symbols.ts หุ้น US ที่ผู้ใช้เพิ่มเอง + registry (รายการหลัก + ที่เพิ่ม)
   src/fetch-runner.ts สั่งดึงจากในแอป (กันดึงซ้ำ symbol เดียวกัน)
   src/contract.ts    สเปกสัญญาสำหรับเครื่องคิด lot (MT5 --info, cache 1 นาที / ค่ามาตรฐาน XM)
   src/symbols.ts     รายชื่อ symbol + แหล่งข้อมูล (FOREX_SOURCE) + native TF ที่ดึงตรง
@@ -32,8 +45,12 @@ apps/server/     Express 5 — API + ดึง/เก็บข้อมูล
   src/ingest.ts      บันทึก native TF แล้ว resample TF ลูกเฉพาะช่วงที่เปลี่ยน
   src/fetchers/      yahoo (forex intraday + หุ้น D1), mt5 (เรียก tools/mt5 ผ่าน Python), dukascopy
 tools/mt5/       สคริปต์ Python ดึงราคาจาก MT5 ของ XM (Windows) — ดู README ในโฟลเดอร์
-data/            ไฟล์ SQLite + cache (ไม่ขึ้น git)
+data/            ไฟล์ SQLite (ราคา, journal, แจ้งเตือน, watchlist) + รูป journal (ไม่ขึ้น git)
+.env             LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID (ไม่ขึ้น git — ดู .env.example)
 apps/web/        React 19 + Vite + Tailwind v4 + Lightweight Charts v5
+  src/App.tsx        แถบเมนูซ้าย + สลับหน้า (หน้ากราฟเปิดค้างไว้)
+  src/views/         ChartView (กราฟ + เครื่องคิด lot), BacktestView, ReplayView, JournalView, AlertsView,
+                     ScannerView, WatchlistView
   src/components/CandleChart.tsx  กราฟ — เวลาแสดงผลเลื่อนเป็นเวลาไทยใน toChartTime (ข้อมูลจริงยังเป็น UTC)
   src/chartTime.ts   toChartTime (เลื่อนเป็นเวลาไทยเพื่อแสดงผล) + snapTime
   src/overlays.ts    แปลงผลจาก core (โซน, BOS, Bo, FVG, OB, sweep) → กล่อง/เส้น/marker ที่จะวาด

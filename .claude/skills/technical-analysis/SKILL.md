@@ -70,7 +70,21 @@ packages/core/src/
 | Bo buy/sell | กรอบ = โซน "เบรกแล้วรอทดสอบ": จาก swing ที่ถูกเบรก ถึงฐานที่ส่งราคาไปเบรก (ไส้) · 3 TF: buy = เขียว 2 แดง 1 (D5 ✅) |
 | โซน R/S | `computeZones` — รวม swing ใกล้กัน, fresh→tested→flipped (RBS/SBR)→ทิ้ง, แบ่งโควต้าเหนือ/ใต้ราคา |
 | โครงสร้าง (มีแล้ว) | `detectStructure` (BOS/CHoCH + ฐานของขา), `detectBoBoxes`, `detectFVGs`, `detectOrderBlocks`, `detectSweeps` — ทุกตัวรับ `(candles, cfg, asOf)` |
+| Backtest (มีแล้ว) | `runBacktest(candles, signals, { tf, spread, fine, riskPct, oosFraction, baselineRuns })` — engine เดียวทั้ง CLI/หน้าเว็บ · limit ที่รออยู่จองช่อง (กันแอบดูอนาคต) |
+| ท่า (มีแล้ว) | `STRATEGIES`: ema-cross, sk-fibo, bo-3tf, crt, fvg-sweep, rbs-sbr, ob-mss — ดูตาราง Phase 7 ใน rules.md |
 | Risk (มีแล้ว) | `calcPosition({ spec, balance, riskPct, entry, sl, tp, spreadPoints, leverage })` — ใช้ซ้ำในท่าเทรด/backtest อย่าเขียนสูตร lot ใหม่ |
+
+## เขียนท่าเทรดใหม่ (strategies/)
+
+1. สร้าง `packages/core/src/strategies/<id>.ts` export `StrategyDef` — ดูตัวอย่างสั้นสุดที่ `ema-cross.ts`
+2. ใช้ของใน `common.ts`: `makeCtx` (swings, events, ATR, latestSwing), `confirmStates` (ltfConfirm หน้า 8),
+   `pickHtf` + `htfView`/`lastClosedHtf` (TF ใหญ่ — ใช้ได้หลังแท่ง TF ใหญ่ปิด), `finalize` (เช็กฝั่ง SL/TP + minRR),
+   `targetFor` (TP แบบ R:R / swing), params ร่วม `P_SL_BUFFER`, `P_MIN_RR`, `P_ENTRY`, `P_RR`, `P_TP_MODE`, `P_HTF`
+3. ต้องการประวัติกรอบ/OB ตามเวลา → `detectBoBoxHistory` / `detectOrderBlockHistory` (มี testedIndex / expiredIndex)
+4. Signal.index = แท่งที่รู้ผล → engine เข้าแท่งถัดไป · `reason` เขียนภาษาคนให้ดูในตารางเทรดได้
+5. เพิ่มใน `STRATEGIES` (`strategies/index.ts`) → เทสต์ใน `test/strategies.test.ts` วนทุกท่าให้อัตโนมัติ (ฝั่ง SL/TP + no-look-ahead)
+6. ลงตาราง "ท่าที่เขียนเป็นโค้ดแล้ว" + ข้อที่ตีความเพิ่มลง D-table ใน rules.md
+7. เช็ก bias: รันบน random walk ล้วน expectancy ต้อง ≈ 0 (ถ้าบวกชัด = มีอะไรแอบดูอนาคต)
 
 ## ห้าม
 

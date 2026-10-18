@@ -27,6 +27,9 @@ interface Props {
   effective: { balance: number; leverage: number | null; spreadPoints: number };
   onReset: () => void;
   onClose: () => void;
+  /** บันทึกแผนนี้ลง journal พร้อมรูปกราฟ */
+  onSaveJournal?: () => void;
+  savingJournal?: boolean;
 }
 
 const fmtMoney = (v: number, cur: string) =>
@@ -111,6 +114,16 @@ export function RiskPanel(p: Props) {
             วางใหม่
           </button>
         </div>
+        {p.onSaveJournal && (
+          <button
+            onClick={p.onSaveJournal}
+            disabled={plan.entry === null || plan.sl === null || p.savingJournal}
+            title="บันทึก Entry/SL/TP/lot + รูปกราฟตอนนี้ ลงหน้า Journal"
+            className="w-full rounded border border-line px-2 py-1 text-[11px] text-slate-300 hover:bg-line disabled:opacity-40"
+          >
+            {p.savingJournal ? 'กำลังบันทึก…' : '📓 บันทึกลง Journal'}
+          </button>
+        )}
       </div>
 
       <div className="space-y-2 border-t border-line pt-3">

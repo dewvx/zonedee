@@ -25,6 +25,7 @@ export class CandleStore {
   private stmtLatest: StatementSync;
   private stmtLatestBefore: StatementSync;
   private stmtRange: StatementSync;
+  private stmtAfter: StatementSync;
   private stmtLastTime: StatementSync;
 
   constructor(path: string = DEFAULT_DB_PATH) {
@@ -65,6 +66,10 @@ export class CandleStore {
       SELECT time, open, high, low, close, volume FROM candles
       WHERE symbol = ? AND timeframe = ? AND time >= ? AND time < ? ORDER BY time ASC
     `);
+    this.stmtAfter = this.db.prepare(`
+      SELECT time, open, high, low, close, volume FROM candles
+      WHERE symbol = ? AND timeframe = ? AND time >= ? ORDER BY time ASC LIMIT ?
+    `);
     this.stmtLastTime = this.db.prepare(`
       SELECT MAX(time) AS last FROM candles WHERE symbol = ? AND timeframe = ?
     `);
@@ -93,6 +98,11 @@ export class CandleStore {
         ? this.stmtLatest.all(symbol, tf, count)
         : this.stmtLatestBefore.all(symbol, tf, before, count);
     return (rows as unknown as Candle[]).reverse();
+  }
+
+  /** แท่ง `count` แท่งแรกที่เวลา ≥ `from` เรียงเก่า → ใหม่ (ใช้ใน replay: แท่ง "อนาคต" ที่ซ่อนไว้) */
+  after(symbol: string, tf: Timeframe, from: number, count: number): Candle[] {
+    return this.stmtAfter.all(symbol, tf, from, count) as unknown as Candle[];
   }
 
   /** แท่งในช่วง [from, to) เรียงเก่า → ใหม่ */

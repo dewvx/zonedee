@@ -126,3 +126,58 @@ describe('POST /api/fetch', () => {
     expect((await fetch(`${base}/api/fetch?symbol=NOPE`, { method: 'POST' })).status).toBe(404);
   });
 });
+
+describe('backtest API', () => {
+  const seed = () => ingest(store, gold, 'M1', generateSampleCandles({ count: 20_000, timeframe: 'M1', startPrice: 2650, startTime: MON, seed: 9 }));
+  const post = (body: unknown) =>
+    fetch(`${base}/api/backtest`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  it('GET /api/strategies → รายชื่อท่า + params', async () => {
+    const list = (await (await fetch(`${base}/api/strategies`)).json()) as Json[];
+    expect(list.map((s) => s.id)).toContain('sk-fibo');
+    expect(list[0].params.length).toBeGreaterThan(0);
+    expect(list[0].generate).toBeUndefined();
+  });
+
+  it('ยังไม่มีข้อมูล → 422 บอกให้ดึงก่อน (ไม่ใช้ข้อมูลจำลอง)', async () => {
+    const res = await post({ symbol: 'XAUUSD', tf: 'M5', strategy: 'ema-cross' });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as Json).error).toContain('ดึงข้อมูล');
+  });
+
+  it('รันท่าเดียว: มีเทรด สถิติ เส้น equity และใช้ M1 แยก SL/TP', async () => {
+    seed();
+    const res = await post({ symbol: 'XAUUSD', tf: 'M5', strategy: 'sk-fibo', baselineRuns: 20, spreadPoints: 30 });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Json;
+    expect(body.meta).toMatchObject({ symbol: 'XAUUSD', tf: 'M5', strategy: 'sk-fibo', fineData: true, spreadPoints: 30 });
+    expect(body.meta.bars).toBeGreaterThan(3000);
+    expect(body.result.stats.trades).toBeGreaterThan(0);
+    expect(body.result.equity.length).toBe(body.result.trades.length + 1);
+    expect(body.result.baseline.runs).toBe(20);
+  });
+
+  it("strategy 'all' → ตารางเทียบทุกท่า เรียงตาม expectancy", async () => {
+    seed();
+    const body = (await (await post({ symbol: 'XAUUSD', tf: 'M15', strategy: 'all', baselineRuns: 10 })).json()) as Json;
+    expect(body.rows.length).toBeGreaterThanOrEqual(5);
+    const exp = body.rows.map((r: Json) => r.stats.expectancyR);
+    expect(exp).toEqual([...exp].sort((a: number, b: number) => b - a));
+  });
+
+  it('ท่า/TF ผิด → 400', async () => {
+    seed();
+    expect((await post({ symbol: 'XAUUSD', tf: 'M5', strategy: 'nope' })).status).toBe(400);
+    expect((await post({ symbol: 'XAUUSD', tf: 'M7', strategy: 'crt' })).status).toBe(400);
+  });
+});
+
+describe('GET /api/candles?after', () => {
+  it('คืนแท่งตั้งแต่เวลานั้นไป เรียงเก่า → ใหม่', async () => {
+    ingest(store, gold, 'M1', generateSampleCandles({ count: 300, timeframe: 'M1', startPrice: 2650, startTime: MON }));
+    const res = (await (await fetch(`${base}/api/candles?symbol=XAUUSD&tf=M5&count=10&after=${MON + 30 * 60_000}`)).json()) as Json;
+    expect(res.candles).toHaveLength(10);
+    expect(res.candles[0].time).toBe(MON + 30 * 60_000);
+    expect(res.hasMore).toBe(true);
+  });
+});

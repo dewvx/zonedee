@@ -15,10 +15,17 @@
 
 ## หลัง MVP
 
-- [ ] **Phase 6 — Backtest engine**: วนทีละแท่ง, SL/TP ด้วย M1, spread, รายงานเป็น R + equity curve, ท่าแรก EMA 9/21
-- [ ] **Phase 7 — ท่าจากไฟล์**: sk Fibo, CRT, FVG + Sweep, RBS/SBR หลาย TF, เทียบกับการเข้าแบบสุ่ม, out-of-sample
-- [ ] **Phase 8 — Journal**: บันทึกการเทรด + รูปกราฟ + ผูกกับสัญญาณ
-- [ ] **Phase 9 — แจ้งเตือน LINE**: Messaging API push (LINE Notify ปิดไปแล้ว) — ระวังโควต้าฟรีของ OA
-- [ ] **Phase 10 — ตัวสแกนหุ้นซิ่ง US**: volume พุ่ง vs ค่าเฉลี่ย 20 วัน, ทะลุแนวต้าน/กรอบ, gap
-- [ ] **Phase 11 — Watchlist ลงทุน**: Daily / Weekly สำหรับพอร์ต DCA
-- [ ] **Phase 12 — โหมด replay**: ซ่อนแท่งอนาคต ให้ทาย buy / sell แล้วเฉลย
+- [x] **Phase 6 — Backtest engine**: market/limit, spread, gap, SL/TP แท่งเดียวแยกด้วย M1, ทีละไม้ (limit จองช่อง), รายงานเป็น R + equity curve, in/out-of-sample, เทียบเข้าสุ่ม — ตรวจกับ random walk แล้วไม่มี bias · `npm run backtest` + หน้า Backtest
+- [x] **Phase 7 — ท่าจากไฟล์**: EMA Cross (ท่า 3), sk Fibo, Bo 3 TF, CRT (ท่า 6), FVG + Sweep (ท่า 2), RBS/SBR หลาย TF (ท่า 1), OB + MSS (ท่า 5) — ปุ่ม "เทียบทุกท่า"
+- [x] **Phase 8 — Journal**: บันทึกแผน/ผล (R คิดให้), รูปกราฟ (ปุ่มในเครื่องคิด lot ถ่ายให้ / Ctrl+V วางรูป), ผูกกับท่า + เวลาสัญญาณ, อารมณ์ + ทำตามแผนไหม, สถิติแยกตามท่า
+- [x] **Phase 9 — แจ้งเตือน LINE**: ตัวตรวจเบื้องหลังใน server (ทุก 30 วิ ตรวจเมื่อแท่งปิด) — เมื่อท่าเกิดสัญญาณ / ราคาปิดเหนือ-ใต้-แตะระดับ → ในแอป + เด้งบนเครื่อง + LINE Messaging API (token ใน .env, จำกัด 30 ข้อความ/วัน, เช็กโควต้าได้)
+- [x] **Phase 10 — ตัวสแกนหุ้นซิ่ง US**: รายชื่อจาก screener ของ Yahoo (small cap gainers ฯลฯ) / watchlist / พิมพ์เอง → volume พุ่ง vs เฉลี่ย 20 วัน, gap, ทะลุ high 20 วัน, BOS ขึ้น + กรองราคา/สภาพคล่อง · กด "กราฟ" = เพิ่มหุ้นเข้าแอปอัตโนมัติ
+- [x] **Phase 11 — Watchlist ลงทุน**: หุ้น/ETF ใน Dime — ผลตอบแทน 1D–1Y/YTD, ห่างจาก high 52 สัปดาห์, MA50/200, RSI, มูลค่า/กำไรพอร์ต, DCA ต่อเดือน
+- [x] **Phase 12 — โหมด replay**: ซ่อนแท่งอนาคต ทาย BUY/SELL/ไม่เทรด ลาก SL/TP แล้วเฉลยทีละแท่ง · สุ่มจุดทั่วไปหรือ "จุดที่ท่าเกิดสัญญาณ" (เทียบกับที่ท่าทำ) · เก็บคะแนน
+
+## ต่อจากนี้ (ไอเดีย — ยังไม่ทำ)
+
+- จูนค่า D1 (swing) / D2 / D3 / D11 / D12 ด้วย backtest บนข้อมูล MT5 จริงหลายเดือน แล้วตัดสินในตาราง rules.md
+- ท่า 4 AMD, ท่า 7 Trendline, ท่า 8 Power x Braron (รอนิยามเพิ่ม)
+- แท่ง D1 แบบตัดวันตอน NY close (D9) ให้ตรงกับ MT5
+- walk-forward / ทดสอบหลายคู่เงินพร้อมกัน, ต้นทุน swap ข้ามคืน

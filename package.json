@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "concurrently -k -n server,web -c blue,magenta \"npm run dev -w @zonedee/server\" \"npm run dev -w @zonedee/web\"",
     "fetch": "npm run fetch -w @zonedee/server --",
+    "backtest": "npm run backtest -w @zonedee/server --",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "build": "npm run build -w @zonedee/web"

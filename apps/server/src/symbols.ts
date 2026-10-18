@@ -81,7 +81,7 @@ const forex = (d: ForexDef, source: ForexSource = FOREX_SOURCE): SymbolConfig =>
   samplePrice: d.samplePrice,
 });
 
-const usStock = (symbol: string, description: string, samplePrice: number): SymbolConfig => ({
+export const usStock = (symbol: string, description: string, samplePrice: number): SymbolConfig => ({
   symbol,
   market: 'us-stock',
   digits: 2,

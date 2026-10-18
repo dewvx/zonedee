@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { calcPosition, roundToStep, type ContractSpec } from '../src/risk/position';
+import { rMultiple } from '../src/risk/r-multiple';
 
 const EURUSD: ContractSpec = {
   symbol: 'EURUSD',
@@ -130,5 +131,20 @@ describe('calcPosition', () => {
     const r = calcPosition({ spec: stock, balance: 1000, riskPct: 2, entry: 200, sl: 190, leverage: 1 });
     expect(r.lots).toBe(2); // เสี่ยง $20 / $10 ต่อหุ้น
     expect(r.margin).toBeCloseTo(400);
+  });
+});
+
+
+describe('rMultiple (journal)', () => {
+  it('buy เข้า 100 SL 98 ออก 105 = +2.5R · ออก 98 = −1R', () => {
+    expect(rMultiple('long', 100, 98, 105)).toBeCloseTo(2.5);
+    expect(rMultiple('long', 100, 98, 98)).toBeCloseTo(-1);
+  });
+  it('sell เข้า 100 SL 102 ออก 97 = +1.5R', () => {
+    expect(rMultiple('short', 100, 102, 97)).toBeCloseTo(1.5);
+  });
+  it('ไม่มี SL → null', () => {
+    expect(rMultiple('long', 100, null, 105)).toBeNull();
+    expect(rMultiple('long', 100, 100, 105)).toBeNull();
   });
 });

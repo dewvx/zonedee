@@ -29,41 +29,62 @@ export function detectBoBoxes(
   config: Partial<DetectorConfig> = {},
   asOf: number = candles.length - 1,
 ): BoBox[] {
-  const cfg = { ...DEFAULTS, ...config };
   if (asOf < 0 || candles.length === 0) return [];
   const data = asOf < candles.length - 1 ? candles.slice(0, asOf + 1) : candles;
+  return detectBoBoxHistory(data, config)
+    .filter((b) => b.expiredIndex === null)
+    .map(({ testedIndex, expiredIndex: _e, ...b }) => ({ ...b, state: testedIndex === null ? 'fresh' : 'tested' }));
+}
 
+/** กรอบ Bo พร้อมประวัติ (ใช้ในท่าเทรด/backtest) */
+export interface BoBoxLife extends Omit<BoBox, 'state'> {
+  /** แท่งแรกที่ราคากลับมาแตะกรอบ (null = ยังไม่แตะ) */
+  testedIndex: number | null;
+  /** แท่งที่ปิดทะลุฝั่งตรงข้าม = หมดอายุ (null = ยังใช้ได้) */
+  expiredIndex: number | null;
+}
+
+/**
+ * กรอบ Bo ทุกกรอบที่เคยเกิด พร้อมแท่งที่ถูกแตะ/หมดอายุ — causal: ข้อมูลของกรอบ ณ แท่ง i
+ * ดูได้จาก createdIndex ≤ i และเทียบ testedIndex/expiredIndex กับ i
+ */
+export function detectBoBoxHistory(candles: readonly Candle[], config: Partial<DetectorConfig> = {}): BoBoxLife[] {
+  const cfg = { ...DEFAULTS, ...config };
   const byBreak = new Map<number, StructureEvent[]>();
-  for (const e of detectStructure(data, cfg)) {
+  for (const e of detectStructure(candles, cfg)) {
     const list = byBreak.get(e.breakIndex) ?? [];
     list.push(e);
     byBreak.set(e.breakIndex, list);
   }
 
-  let boxes: (BoBox & { dead?: boolean })[] = [];
-  for (let i = 0; i < data.length; i++) {
-    const bar = data[i]!;
-    for (const b of boxes) {
-      if (b.dead || b.createdIndex >= i) continue;
-      if (b.direction === 'bull' ? bar.close < b.bottom : bar.close > b.top) b.dead = true;
-      else if (b.state === 'fresh' && bar.low <= b.top && bar.high >= b.bottom) b.state = 'tested';
+  const all: BoBoxLife[] = [];
+  let alive: BoBoxLife[] = [];
+  for (let i = 0; i < candles.length; i++) {
+    const bar = candles[i]!;
+    for (const b of alive) {
+      if (b.createdIndex >= i) continue;
+      if (b.direction === 'bull' ? bar.close < b.bottom : bar.close > b.top) b.expiredIndex = i;
+      else if (b.testedIndex === null && bar.low <= b.top && bar.high >= b.bottom) b.testedIndex = i;
     }
+    alive = alive.filter((b) => b.expiredIndex === null);
     for (const e of byBreak.get(i) ?? []) {
       const top = e.direction === 'bull' ? e.level : e.originPrice;
       const bottom = e.direction === 'bull' ? e.originPrice : e.level;
       if (top <= bottom) continue;
-      boxes.push({
+      const box: BoBoxLife = {
         id: `${e.direction}-${e.swingIndex}`,
         direction: e.direction,
         top,
         bottom,
         startTime: e.swingTime,
         createdIndex: i,
-        state: 'fresh',
         eventType: e.type,
-      });
+        testedIndex: null,
+        expiredIndex: null,
+      };
+      all.push(box);
+      alive.push(box);
     }
-    if (boxes.length > 200) boxes = boxes.filter((b) => !b.dead);
   }
-  return boxes.filter((b) => !b.dead).map(({ dead: _dead, ...b }) => b);
+  return all;
 }
