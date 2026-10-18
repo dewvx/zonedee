@@ -16,7 +16,8 @@ import {
   type StrategyInfo,
   type SymbolSummary,
 } from '../api';
-import { inputCls } from '../components/ParamForm';
+import { Icon } from '../components/Icon';
+import { Empty, Note, Stat } from '../components/ui';
 import { TradePreview } from '../components/TradePreview';
 import { fmtPct, fmtR, formatThaiTime } from '../format';
 
@@ -27,10 +28,10 @@ const STATUS_LABEL: Record<JournalStatus, string> = {
   cancelled: 'ไม่ได้เข้า',
 };
 const STATUS_CLS: Record<JournalStatus, string> = {
-  plan: 'bg-slate-700 text-slate-200',
-  open: 'bg-blue-900 text-blue-200',
-  closed: 'bg-emerald-950 text-emerald-300',
-  cancelled: 'bg-slate-800 text-slate-500',
+  plan: 'bg-hover text-fg-2',
+  open: 'bg-accent/15 text-accent',
+  closed: 'bg-ok/12 text-ok',
+  cancelled: 'bg-hover text-faint',
 };
 const EMOTIONS = ['ตามแผน', 'มั่นใจ', 'ลังเล', 'FOMO', 'กลัว', 'เอาคืน', 'เบื่อ'];
 
@@ -63,13 +64,13 @@ const EMPTY: JournalInput = {
 function NumField({ label, value, onChange, step = 'any' }: { label: string; value: number | null | undefined; onChange: (v: number | null) => void; step?: string }) {
   return (
     <label className="block">
-      <span className="mb-0.5 block text-[11px] text-slate-400">{label}</span>
+      <span className="label">{label}</span>
       <input
         type="number"
         step={step}
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value === '' ? null : e.target.valueAsNumber)}
-        className={`${inputCls} font-mono`}
+        className="field tabular-nums"
       />
     </label>
   );
@@ -230,56 +231,45 @@ export default function JournalView() {
   return (
     <div className="flex h-full min-w-0">
       {/* ── รายการ ─────────────────────────────────────────── */}
-      <aside className="flex w-80 shrink-0 flex-col border-r border-line bg-panel">
-        <div className="border-b border-line p-3">
+      <aside className="flex w-[22rem] shrink-0 flex-col border-r border-line bg-panel">
+        <div className="space-y-4 border-b border-line px-5 py-4">
           <div className="flex items-center">
-            <h2 className="text-sm font-semibold text-white">Journal</h2>
-            <button onClick={() => select('new')} className="ml-auto rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-500">
-              + บันทึกใหม่
+            <div>
+              <h1 className="text-[15px] font-semibold leading-tight text-fg">Journal</h1>
+              <p className="text-xs text-muted">จดทุกไม้ ทั้งที่ชนะและแพ้</p>
+            </div>
+            <button onClick={() => select('new')} className="btn btn-primary btn-sm ml-auto">
+              <Icon name="plus" size={14} />
+              บันทึกใหม่
             </button>
           </div>
-          <div className="mt-2 grid grid-cols-3 gap-1.5 text-[11px]">
-            <div className="rounded border border-line bg-surface px-2 py-1">
-              <div className="text-slate-500">ปิดแล้ว</div>
-              <div className="font-mono text-white">{stats.closed}</div>
-            </div>
-            <div className="rounded border border-line bg-surface px-2 py-1">
-              <div className="text-slate-500">ชนะ</div>
-              <div className="font-mono text-white">{stats.closed ? fmtPct(stats.wins / stats.closed) : '-'}</div>
-            </div>
-            <div className="rounded border border-line bg-surface px-2 py-1">
-              <div className="text-slate-500">รวม</div>
-              <div className={`font-mono ${stats.totalR >= 0 ? 'text-bull' : 'text-bear'}`}>{fmtR(stats.totalR, 1)}</div>
-            </div>
-            <div className="rounded border border-line bg-surface px-2 py-1">
-              <div className="text-slate-500">เฉลี่ย/ไม้</div>
-              <div className="font-mono text-white">{stats.closed ? fmtR(stats.avgR) : '-'}</div>
-            </div>
-            <div className="rounded border border-line bg-surface px-2 py-1">
-              <div className="text-slate-500">กำไร (เงิน)</div>
-              <div className={`font-mono ${stats.pnl >= 0 ? 'text-bull' : 'text-bear'}`}>{stats.pnl.toFixed(2)}</div>
-            </div>
-            <div className="rounded border border-line bg-surface px-2 py-1" title="สัดส่วนเทรดที่ติ๊กว่าทำตามแผน">
-              <div className="text-slate-500">ตามแผน</div>
-              <div className="font-mono text-white">{stats.followRate === null ? '-' : fmtPct(stats.followRate)}</div>
-            </div>
+          <div className="grid grid-cols-3 gap-x-3 gap-y-3">
+            <Stat label="ปิดแล้ว" value={stats.closed} />
+            <Stat label="ชนะ" value={stats.closed ? fmtPct(stats.wins / stats.closed) : '-'} />
+            <Stat label="รวม" value={fmtR(stats.totalR, 1)} tone={stats.totalR > 0 ? 'up' : stats.totalR < 0 ? 'down' : undefined} />
+            <Stat label="เฉลี่ย/ไม้" value={stats.closed ? fmtR(stats.avgR) : '-'} />
+            <Stat label="กำไร (เงิน)" value={stats.pnl.toFixed(2)} tone={stats.pnl > 0 ? 'up' : stats.pnl < 0 ? 'down' : undefined} />
+            <Stat label="ทำตามแผน" value={stats.followRate === null ? '-' : fmtPct(stats.followRate)} />
           </div>
           {stats.byStrategy.length > 0 && (
-            <table className="mt-2 w-full text-[10px]">
-              <tbody>
-                {stats.byStrategy.slice(0, 5).map(([k, v]) => (
-                  <tr key={k} className="text-slate-400">
-                    <td className="truncate py-0.5">{strategyName(k)}</td>
-                    <td className="text-right font-mono">{v.n} ไม้</td>
-                    <td className="text-right font-mono">{fmtPct(v.wins / v.n)}</td>
-                    <td className={`text-right font-mono ${v.r >= 0 ? 'text-bull' : 'text-bear'}`}>{fmtR(v.r, 1)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div>
+              <div className="mb-1 text-xs font-medium text-fg-2">แยกตามท่า</div>
+              <table className="w-full text-xs">
+                <tbody>
+                  {stats.byStrategy.slice(0, 5).map(([k, v]) => (
+                    <tr key={k} className="text-muted">
+                      <td className="max-w-0 truncate py-0.5 pr-2">{strategyName(k)}</td>
+                      <td className="text-right tabular-nums">{v.n} ไม้</td>
+                      <td className="pl-2 text-right tabular-nums">{fmtPct(v.wins / v.n)}</td>
+                      <td className={`pl-2 text-right font-medium tabular-nums ${v.r >= 0 ? 'text-bull' : 'text-bear'}`}>{fmtR(v.r, 1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
-          <div className="mt-2 flex gap-1.5">
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as JournalStatus | 'all')} className={inputCls}>
+          <div className="flex gap-2">
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as JournalStatus | 'all')} className="field" aria-label="สถานะ">
               <option value="all">ทุกสถานะ</option>
               {(Object.keys(STATUS_LABEL) as JournalStatus[]).map((s) => (
                 <option key={s} value={s}>
@@ -287,7 +277,7 @@ export default function JournalView() {
                 </option>
               ))}
             </select>
-            <select value={symbolFilter} onChange={(e) => setSymbolFilter(e.target.value)} className={inputCls}>
+            <select value={symbolFilter} onChange={(e) => setSymbolFilter(e.target.value)} className="field" aria-label="symbol">
               <option value="all">ทุก symbol</option>
               {symbolsInJournal.map((s) => (
                 <option key={s}>{s}</option>
@@ -295,28 +285,36 @@ export default function JournalView() {
             </select>
           </div>
         </div>
-        <ul className="min-h-0 flex-1 overflow-y-auto">
+        <ul className="min-h-0 flex-1 overflow-y-auto p-2">
           {filtered.length === 0 && (
-            <li className="p-4 text-xs leading-relaxed text-slate-500">
-              ยังไม่มีบันทึก — กด "+ บันทึกใหม่" หรือในหน้ากราฟเปิด 📐 คำนวณ lot วาง Entry/SL/TP แล้วกด 📓 บันทึกลง Journal (ได้รูปกราฟด้วย)
+            <li className="p-3 text-xs leading-relaxed text-muted">
+              ยังไม่มีบันทึก — กด "บันทึกใหม่" หรือในหน้ากราฟเปิด "คำนวณ lot" วาง Entry/SL/TP แล้วกด "บันทึกลง Journal" (ได้รูปกราฟติดมาด้วย)
             </li>
           )}
           {filtered.map((e) => (
             <li key={e.id}>
               <button
                 onClick={() => select(e.id)}
-                className={`flex w-full items-center gap-2 border-b border-line/60 px-3 py-2 text-left text-xs hover:bg-line/50 ${selectedId === e.id ? 'bg-line/70' : ''}`}
+                className={`mb-0.5 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-hover ${selectedId === e.id ? 'bg-hover' : ''}`}
               >
-                <span className={`w-9 font-semibold ${e.direction === 'long' ? 'text-bull' : 'text-bear'}`}>{e.direction === 'long' ? 'BUY' : 'SELL'}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-white">
-                    {e.symbol} {e.tf ?? ''} {e.strategy ? `· ${strategyName(e.strategy)}` : ''}
-                  </span>
-                  <span className="block text-[10px] text-slate-500">{formatThaiTime(e.entryTime ?? e.createdAt)}</span>
+                <span className={`badge w-12 justify-center ${e.direction === 'long' ? 'bg-bull/12 text-bull' : 'bg-bear/12 text-bear'}`}>
+                  {e.direction === 'long' ? 'BUY' : 'SELL'}
                 </span>
-                {e.images.length > 0 && <span className="text-[10px] text-slate-500">🖼 {e.images.length}</span>}
-                <span className={`rounded px-1.5 py-0.5 text-[10px] ${STATUS_CLS[e.status]}`}>{STATUS_LABEL[e.status]}</span>
-                {e.r !== null && <span className={`w-14 text-right font-mono ${e.r > 0 ? 'text-bull' : 'text-bear'}`}>{fmtR(e.r, 1)}</span>}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-fg">
+                    {e.symbol} {e.tf ?? ''}
+                    {e.strategy && <span className="font-normal text-muted"> — {strategyName(e.strategy)}</span>}
+                  </span>
+                  <span className="block text-xs text-faint">
+                    {formatThaiTime(e.entryTime ?? e.createdAt)}
+                    {e.images.length > 0 && ` · รูป ${e.images.length}`}
+                  </span>
+                </span>
+                {e.r !== null ? (
+                  <span className={`text-right font-semibold tabular-nums ${e.r > 0 ? 'text-bull' : 'text-bear'}`}>{fmtR(e.r, 1)}</span>
+                ) : (
+                  <span className={`badge ${STATUS_CLS[e.status]}`}>{STATUS_LABEL[e.status]}</span>
+                )}
               </button>
             </li>
           ))}
@@ -324,46 +322,43 @@ export default function JournalView() {
       </aside>
 
       {/* ── รายละเอียด ─────────────────────────────────────── */}
-      <main className="min-w-0 flex-1 overflow-y-auto p-4 text-xs">
-        {error && <div className="mb-3 rounded-md border border-red-900/60 bg-red-950/40 px-3 py-2 text-red-300">{error}</div>}
+      <main className="min-w-0 flex-1 overflow-y-auto p-6">
+        {error && <Note kind="bad">{error}</Note>}
         {selectedId === null ? (
-          <div className="mx-auto mt-16 max-w-md text-center text-sm leading-relaxed text-slate-400">
-            <p className="text-base text-slate-200">จดทุกไม้ ทั้งที่ชนะและแพ้</p>
-            <p className="mt-2">
-              เลือกรายการทางซ้าย หรือกด "+ บันทึกใหม่" · เขียนเหตุผลก่อนเข้า แล้วกลับมาเติมผลหลังปิด — สถิติ "ทำตามแผน" กับ "แยกตามท่า"
-              จะบอกว่าแพ้เพราะท่า หรือเพราะใจ
-            </p>
-          </div>
+          <Empty icon="journal" title="เลือกรายการ หรือกดบันทึกใหม่">
+            เขียนเหตุผลก่อนเข้า แล้วกลับมาเติมผลหลังปิด — สถิติ "ทำตามแผน" กับ "แยกตามท่า" จะบอกว่าแพ้เพราะท่า หรือเพราะใจ
+          </Empty>
         ) : (
-          <div className="mx-auto max-w-3xl space-y-4">
+          <div className="mx-auto max-w-3xl space-y-5">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-semibold text-white">{selectedId === 'new' ? 'บันทึกใหม่' : `#${selectedId}`}</h3>
-              {selected && <span className="text-[11px] text-slate-500">แก้ไขล่าสุด {formatThaiTime(selected.updatedAt)}</span>}
+              <h2 className="text-lg font-semibold text-fg">{selectedId === 'new' ? 'บันทึกใหม่' : `${draft.symbol} ${draft.tf ?? ''} — #${selectedId}`}</h2>
+              {selected && <span className="text-xs text-faint">แก้ไขล่าสุด {formatThaiTime(selected.updatedAt)}</span>}
               <div className="ml-auto flex gap-2">
                 {canPreview && (
-                  <button onClick={() => setPreview(true)} className="rounded border border-line px-2.5 py-1 text-slate-300 hover:bg-line">
+                  <button onClick={() => setPreview(true)} className="btn btn-sm">
+                    <Icon name="chart" size={14} />
                     ดูบนกราฟ
                   </button>
                 )}
                 {typeof selectedId === 'number' && (
-                  <button onClick={() => void remove()} className="rounded border border-red-900/60 px-2.5 py-1 text-red-300 hover:bg-red-950/50">
+                  <button onClick={() => void remove()} className="btn btn-sm btn-danger">
                     ลบ
                   </button>
                 )}
                 <button
                   onClick={() => void save()}
                   disabled={saving || (!dirty && selectedId !== 'new')}
-                  className="rounded bg-blue-600 px-3 py-1 font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+                  className="btn btn-primary btn-sm"
                 >
                   {saving ? 'กำลังบันทึก…' : dirty || selectedId === 'new' ? 'บันทึก' : 'บันทึกแล้ว'}
                 </button>
               </div>
             </div>
 
-            <section className="grid grid-cols-2 gap-3 rounded-md border border-line bg-panel p-3 sm:grid-cols-4">
+            <section className="grid grid-cols-2 gap-3 card p-5 sm:grid-cols-4">
               <label className="block">
-                <span className="mb-0.5 block text-[11px] text-slate-400">Symbol</span>
-                <select value={draft.symbol} onChange={(e) => set({ symbol: e.target.value })} className={inputCls}>
+                <span className="label">Symbol</span>
+                <select value={draft.symbol} onChange={(e) => set({ symbol: e.target.value })} className="field">
                   {symbols.map((s) => (
                     <option key={s.symbol}>{s.symbol}</option>
                   ))}
@@ -371,8 +366,8 @@ export default function JournalView() {
                 </select>
               </label>
               <label className="block">
-                <span className="mb-0.5 block text-[11px] text-slate-400">TF ที่ดูตอนเข้า</span>
-                <select value={draft.tf ?? ''} onChange={(e) => set({ tf: (e.target.value || null) as Timeframe | null })} className={inputCls}>
+                <span className="label">TF ที่ดูตอนเข้า</span>
+                <select value={draft.tf ?? ''} onChange={(e) => set({ tf: (e.target.value || null) as Timeframe | null })} className="field">
                   <option value="">-</option>
                   {(info?.timeframes ?? []).map((t) => (
                     <option key={t}>{t}</option>
@@ -380,13 +375,13 @@ export default function JournalView() {
                 </select>
               </label>
               <div>
-                <span className="mb-0.5 block text-[11px] text-slate-400">ทิศ</span>
-                <div className="flex overflow-hidden rounded border border-line">
+                <span className="label">ทิศ</span>
+                <div className="seg flex w-full">
                   {(['long', 'short'] as const).map((d) => (
                     <button
                       key={d}
                       onClick={() => set({ direction: d })}
-                      className={`flex-1 py-1 font-semibold ${draft.direction === d ? (d === 'long' ? 'bg-bull text-black' : 'bg-bear text-white') : 'text-slate-400 hover:bg-line'}`}
+                      className={`flex-1 py-1 font-semibold ${draft.direction === d ? (d === 'long' ? 'bg-bull text-black' : 'bg-bear text-white') : 'text-muted hover:bg-hover'}`}
                     >
                       {d === 'long' ? 'BUY' : 'SELL'}
                     </button>
@@ -394,8 +389,8 @@ export default function JournalView() {
                 </div>
               </div>
               <label className="block">
-                <span className="mb-0.5 block text-[11px] text-slate-400">สถานะ</span>
-                <select value={draft.status} onChange={(e) => set({ status: e.target.value as JournalStatus })} className={inputCls}>
+                <span className="label">สถานะ</span>
+                <select value={draft.status} onChange={(e) => set({ status: e.target.value as JournalStatus })} className="field">
                   {(Object.keys(STATUS_LABEL) as JournalStatus[]).map((s) => (
                     <option key={s} value={s}>
                       {STATUS_LABEL[s]}
@@ -405,14 +400,14 @@ export default function JournalView() {
               </label>
 
               <label className="col-span-2 block">
-                <span className="mb-0.5 block text-[11px] text-slate-400">เวลาเข้า (เวลาไทย)</span>
-                <input type="datetime-local" value={toLocal(draft.entryTime ?? null)} onChange={(e) => set({ entryTime: fromLocal(e.target.value) })} className={inputCls} />
+                <span className="label">เวลาเข้า (เวลาไทย)</span>
+                <input type="datetime-local" value={toLocal(draft.entryTime ?? null)} onChange={(e) => set({ entryTime: fromLocal(e.target.value) })} className="field" />
               </label>
               <NumField label="Entry" value={draft.entryPrice} onChange={(v) => set({ entryPrice: v })} />
               <NumField label="Lot" value={draft.lots} onChange={(v) => set({ lots: v })} step="0.01" />
               <NumField label="SL" value={draft.sl} onChange={(v) => set({ sl: v })} />
               <NumField label="TP" value={draft.tp} onChange={(v) => set({ tp: v })} />
-              <div className="col-span-2 flex items-end gap-4 pb-1 text-[11px] text-slate-400">
+              <div className="col-span-2 flex items-end gap-4 pb-1 text-xs text-muted">
                 {plannedRR !== null && <span>R:R ที่วาง 1:{plannedRR.toFixed(2)}</span>}
                 {draft.entryPrice != null && draft.sl != null && (
                   <span>SL {(Math.abs(draft.entryPrice - draft.sl) * 10 ** digits).toFixed(0)} points</span>
@@ -420,23 +415,23 @@ export default function JournalView() {
               </div>
 
               <label className="col-span-2 block">
-                <span className="mb-0.5 block text-[11px] text-slate-400">เวลาออก</span>
-                <input type="datetime-local" value={toLocal(draft.exitTime ?? null)} onChange={(e) => set({ exitTime: fromLocal(e.target.value) })} className={inputCls} />
+                <span className="label">เวลาออก</span>
+                <input type="datetime-local" value={toLocal(draft.exitTime ?? null)} onChange={(e) => set({ exitTime: fromLocal(e.target.value) })} className="field" />
               </label>
               <NumField label="ราคาออก" value={draft.exitPrice} onChange={(v) => set({ exitPrice: v, status: v !== null && draft.status !== 'closed' ? 'closed' : draft.status })} />
               <NumField label="กำไร/ขาดทุน (เงิน)" value={draft.pnl} onChange={(v) => set({ pnl: v })} />
               {liveR !== null && (
-                <div className={`col-span-4 font-mono text-sm ${liveR > 0 ? 'text-bull' : 'text-bear'}`}>ผล {fmtR(liveR)}</div>
+                <div className={`col-span-4 tabular-nums text-sm ${liveR > 0 ? 'text-bull' : 'text-bear'}`}>ผล {fmtR(liveR)}</div>
               )}
             </section>
 
-            <section className="grid gap-3 rounded-md border border-line bg-panel p-3 sm:grid-cols-2">
+            <section className="grid gap-3 card p-5 sm:grid-cols-2">
               <label className="block">
-                <span className="mb-0.5 block text-[11px] text-slate-400">ท่า (ผูกกับสัญญาณ)</span>
+                <span className="label">ท่า (ผูกกับสัญญาณ)</span>
                 <select
                   value={isKnownStrategy ? (draft.strategy ?? '') : '__other'}
                   onChange={(e) => set({ strategy: e.target.value === '__other' ? 'อื่นๆ' : e.target.value })}
-                  className={inputCls}
+                  className="field"
                 >
                   <option value="">- ไม่ระบุ -</option>
                   {strategies.map((s) => (
@@ -447,25 +442,26 @@ export default function JournalView() {
                   <option value="__other">อื่นๆ (พิมพ์เอง)</option>
                 </select>
                 {!isKnownStrategy && (
-                  <input value={draft.strategy} onChange={(e) => set({ strategy: e.target.value })} className={`${inputCls} mt-1`} placeholder="ชื่อท่า" />
+                  <input value={draft.strategy} onChange={(e) => set({ strategy: e.target.value })} className="field mt-1" placeholder="ชื่อท่า" />
                 )}
               </label>
               <label className="block">
-                <span className="mb-0.5 block text-[11px] text-slate-400">เวลาแท่งสัญญาณ (ถ้ามี)</span>
-                <input type="datetime-local" value={toLocal(draft.signalTime ?? null)} onChange={(e) => set({ signalTime: fromLocal(e.target.value) })} className={inputCls} />
+                <span className="label">เวลาแท่งสัญญาณ (ถ้ามี)</span>
+                <input type="datetime-local" value={toLocal(draft.signalTime ?? null)} onChange={(e) => set({ signalTime: fromLocal(e.target.value) })} className="field" />
               </label>
               <label className="block sm:col-span-2">
-                <span className="mb-0.5 block text-[11px] text-slate-400">ทำไมถึงเข้า (setup ที่เห็น)</span>
-                <textarea rows={3} value={draft.setup} onChange={(e) => set({ setup: e.target.value })} className={inputCls} placeholder="เช่น H1 ทำ RBS, M5 CHoCH แล้ว BOS, ย่อมาแตะ 0.618" />
+                <span className="label">ทำไมถึงเข้า (setup ที่เห็น)</span>
+                <textarea rows={3} value={draft.setup} onChange={(e) => set({ setup: e.target.value })} className="field" placeholder="เช่น H1 ทำ RBS, M5 CHoCH แล้ว BOS, ย่อมาแตะ 0.618" />
               </label>
               <div>
-                <span className="mb-0.5 block text-[11px] text-slate-400">อารมณ์ตอนเข้า</span>
+                <span className="label">อารมณ์ตอนเข้า</span>
                 <div className="flex flex-wrap gap-1">
                   {EMOTIONS.map((m) => (
                     <button
                       key={m}
                       onClick={() => set({ emotion: draft.emotion === m ? '' : m })}
-                      className={`rounded-full border px-2 py-0.5 ${draft.emotion === m ? 'border-blue-500 bg-blue-600/30 text-white' : 'border-line text-slate-400 hover:bg-line'}`}
+                      aria-pressed={draft.emotion === m}
+                      className="chip"
                     >
                       {m}
                     </button>
@@ -473,8 +469,8 @@ export default function JournalView() {
                 </div>
               </div>
               <div>
-                <span className="mb-0.5 block text-[11px] text-slate-400">ทำตามแผนไหม</span>
-                <div className="flex overflow-hidden rounded border border-line">
+                <span className="label">ทำตามแผนไหม</span>
+                <div className="seg flex w-full">
                   {([
                     [true, 'ตามแผน'],
                     [false, 'ไม่ตาม'],
@@ -483,7 +479,7 @@ export default function JournalView() {
                     <button
                       key={label}
                       onClick={() => set({ followedPlan: v })}
-                      className={`flex-1 py-1 ${draft.followedPlan === v ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-line'}`}
+                      className={`flex-1 py-1 ${draft.followedPlan === v ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover'}`}
                     >
                       {label}
                     </button>
@@ -491,25 +487,25 @@ export default function JournalView() {
                 </div>
               </div>
               <label className="block sm:col-span-2">
-                <span className="mb-0.5 block text-[11px] text-slate-400">บทเรียน / ผิดตรงไหน</span>
-                <textarea rows={2} value={draft.lesson} onChange={(e) => set({ lesson: e.target.value })} className={inputCls} />
+                <span className="label">บทเรียน / ผิดตรงไหน</span>
+                <textarea rows={2} value={draft.lesson} onChange={(e) => set({ lesson: e.target.value })} className="field" />
               </label>
               <label className="block sm:col-span-2">
-                <span className="mb-0.5 block text-[11px] text-slate-400">แท็ก (คั่นด้วย ,)</span>
+                <span className="label">แท็ก (คั่นด้วย ,)</span>
                 <input
                   value={(draft.tags ?? []).join(', ')}
                   onChange={(e) => set({ tags: e.target.value.split(',').map((t) => t.trim()) })}
-                  className={inputCls}
+                  className="field"
                   placeholder="london, ข่าว, เทรดเกิน"
                 />
               </label>
             </section>
 
-            <section className="rounded-md border border-line bg-panel p-3">
+            <section className="card p-5">
               <div className="mb-2 flex items-center gap-2">
-                <span className="text-[11px] font-medium text-slate-300">รูปกราฟ</span>
-                <span className="text-[11px] text-slate-500">Ctrl+V วางรูปที่แคปไว้ได้เลย</span>
-                <label className={`ml-auto cursor-pointer rounded border border-line px-2 py-0.5 text-slate-300 hover:bg-line ${typeof selectedId !== 'number' ? 'pointer-events-none opacity-40' : ''}`}>
+                <span className="text-xs font-medium text-fg-2">รูปกราฟ</span>
+                <span className="text-xs text-faint">Ctrl+V วางรูปที่แคปไว้ได้เลย</span>
+                <label className={`ml-auto cursor-pointer rounded border border-line px-2 py-0.5 text-fg-2 hover:bg-hover ${typeof selectedId !== 'number' ? 'pointer-events-none opacity-40' : ''}`}>
                   แนบรูป
                   <input
                     type="file"
@@ -524,7 +520,7 @@ export default function JournalView() {
                 </label>
               </div>
               {typeof selectedId !== 'number' ? (
-                <p className="text-slate-500">บันทึกรายการก่อน แล้วค่อยแนบรูป</p>
+                <p className="text-faint">บันทึกรายการก่อน แล้วค่อยแนบรูป</p>
               ) : selected && selected.images.length > 0 ? (
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {selected.images.map((name) => (
@@ -532,7 +528,7 @@ export default function JournalView() {
                       <img src={journalImageUrl(name)} alt="" className="h-32 w-full cursor-zoom-in object-cover" onClick={() => setBigImage(name)} />
                       <button
                         onClick={() => void removeJournalImage(selected.id, name).then(reload)}
-                        className="absolute right-1 top-1 hidden rounded bg-black/70 px-1.5 text-[10px] text-red-300 group-hover:block"
+                        className="absolute right-1 top-1 hidden rounded bg-black/70 px-1.5 text-[11px] text-bad group-hover:block"
                       >
                         ลบ
                       </button>
@@ -540,7 +536,7 @@ export default function JournalView() {
                   ))}
                 </div>
               ) : (
-                <p className="text-slate-500">ยังไม่มีรูป</p>
+                <p className="text-faint">ยังไม่มีรูป</p>
               )}
             </section>
           </div>

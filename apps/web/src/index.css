@@ -1,12 +1,81 @@
 @import 'tailwindcss';
 
-@theme {
-  --font-sans: 'Inter', 'Noto Sans Thai', 'Leelawadee UI', system-ui, sans-serif;
-  --color-panel: #12161f;
-  --color-surface: #0b0e14;
-  --color-line: #232937;
-  --color-bull: #22c55e;
-  --color-bear: #ef4444;
+/*
+ * ระบบสีของ zonedee — สลับมืด/สว่างด้วย <html data-theme="dark|light"> (ดู theme.ts)
+ * ใช้ชื่อตามหน้าที่: bg (พื้นแอป) · panel (แผง/แถบ) · field (ช่องกรอก) · hover · line (เส้นขอบ)
+ * fg (ตัวหนังสือหลัก) · fg-2 (รอง) · muted (คำอธิบาย) · faint (จางสุด) · accent (ที่เลือก/ปุ่มหลัก)
+ * bull / bear (ราคาขึ้นลง) · ok / warn / bad (สถานะ)
+ */
+@theme inline {
+  --font-sans: 'IBM Plex Sans Thai', 'Leelawadee UI', system-ui, sans-serif;
+  --color-bg: var(--c-bg);
+  --color-panel: var(--c-panel);
+  --color-field: var(--c-field);
+  --color-hover: var(--c-hover);
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+  --color-fg: var(--c-fg);
+  --color-fg-2: var(--c-fg-2);
+  --color-muted: var(--c-muted);
+  --color-faint: var(--c-faint);
+  --color-accent: var(--c-accent);
+  --color-accent-hi: var(--c-accent-hi);
+  --color-on-accent: var(--c-on-accent);
+  --color-bull: var(--c-bull);
+  --color-bear: var(--c-bear);
+  --color-ok: var(--c-ok);
+  --color-warn: var(--c-warn);
+  --color-bad: var(--c-bad);
+  --color-violet: var(--c-violet);
+}
+
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --c-bg: #0e131b;
+  --c-panel: #131924;
+  --c-field: #0b1017;
+  --c-hover: #1b2230;
+  --c-line: #222b3a;
+  --c-line-strong: #323d51;
+  --c-fg: #e4e8f0;
+  --c-fg-2: #c3cad6;
+  --c-muted: #8792a6;
+  --c-faint: #5d6779;
+  --c-accent: #6e7bf7;
+  --c-accent-hi: #8591fa;
+  --c-on-accent: #ffffff;
+  --c-bull: #2bc48a;
+  --c-bear: #f0566e;
+  --c-ok: #3fcf8e;
+  --c-warn: #e9b949;
+  --c-bad: #f27088;
+  --c-violet: #b392f0;
+  --shadow-pop: 0 12px 32px -8px rgb(0 0 0 / 0.6);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --c-bg: #f4f6f9;
+  --c-panel: #ffffff;
+  --c-field: #f7f8fa;
+  --c-hover: #edf0f5;
+  --c-line: #e3e7ee;
+  --c-line-strong: #cdd3dd;
+  --c-fg: #161c28;
+  --c-fg-2: #344054;
+  --c-muted: #667085;
+  --c-faint: #98a2b3;
+  --c-accent: #4757e6;
+  --c-accent-hi: #3646d6;
+  --c-on-accent: #ffffff;
+  --c-bull: #12a06c;
+  --c-bear: #e0445e;
+  --c-ok: #12a06c;
+  --c-warn: #b7791f;
+  --c-bad: #d93a55;
+  --c-violet: #7c4ddb;
+  --shadow-pop: 0 12px 32px -10px rgb(16 24 40 / 0.22);
 }
 
 html,
@@ -16,6 +85,305 @@ body,
 }
 
 body {
-  background: var(--color-surface);
-  color: #d6dae3;
+  background: var(--c-bg);
+  color: var(--c-fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ตัวเลขเรียงหลักตรงกัน (ราคา, R, %) */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 1px;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--c-accent);
+}
+
+/* scrollbar บางๆ ตามธีม */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-line-strong) transparent;
+}
+
+/* ── ชิ้นส่วนที่ใช้ซ้ำ ─────────────────────────────────────────── */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    height: 2rem;
+    padding: 0 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--c-fg-2);
+    background: transparent;
+    border: 1px solid var(--c-line);
+    transition: background-color 120ms, border-color 120ms, color 120ms;
+    white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) {
+    background: var(--c-hover);
+    color: var(--c-fg);
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: var(--c-accent);
+    border-color: var(--c-accent);
+    color: var(--c-on-accent);
+    font-weight: 600;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--c-accent-hi);
+    border-color: var(--c-accent-hi);
+    color: var(--c-on-accent);
+  }
+  .btn-ghost {
+    border-color: transparent;
+  }
+  .btn-sm {
+    height: 1.625rem;
+    padding: 0 0.55rem;
+    font-size: 12px;
+    border-radius: 0.4rem;
+  }
+  .btn-icon {
+    width: 2rem;
+    padding: 0;
+  }
+  .btn-danger:hover:not(:disabled) {
+    color: var(--c-bad);
+    border-color: color-mix(in srgb, var(--c-bad) 40%, transparent);
+    background: color-mix(in srgb, var(--c-bad) 8%, transparent);
+  }
+
+  /* ช่องกรอก */
+  .field {
+    width: 100%;
+    height: 2rem;
+    padding: 0 0.6rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--c-line);
+    background: var(--c-field);
+    color: var(--c-fg);
+    font-size: 12.5px;
+    outline: none;
+    transition: border-color 120ms, box-shadow 120ms;
+  }
+  textarea.field {
+    height: auto;
+    padding: 0.45rem 0.6rem;
+    line-height: 1.55;
+  }
+  .field:focus {
+    border-color: var(--c-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-accent) 20%, transparent);
+  }
+  .field::placeholder {
+    color: var(--c-faint);
+  }
+  .label {
+    display: block;
+    margin-bottom: 0.25rem;
+    font-size: 12px;
+    color: var(--c-muted);
+  }
+
+  /* แผง (การ์ด) */
+  .card {
+    background: var(--c-panel);
+    border: 1px solid var(--c-line);
+    border-radius: 0.75rem;
+  }
+
+  /* ชิปเปิด/ปิด (ชั้นบนกราฟ, ตัวกรอง) */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    height: 1.75rem;
+    padding: 0 0.65rem;
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--c-muted);
+    border: 1px solid var(--c-line);
+    background: transparent;
+    transition: background-color 120ms, color 120ms, border-color 120ms;
+    white-space: nowrap;
+  }
+  .chip:hover {
+    color: var(--c-fg);
+    background: var(--c-hover);
+  }
+  .chip[aria-pressed='true'] {
+    color: var(--c-fg);
+    background: color-mix(in srgb, var(--c-accent) 14%, transparent);
+    border-color: color-mix(in srgb, var(--c-accent) 45%, transparent);
+  }
+
+  /* ปุ่มกลุ่มเลือกได้อันเดียว (TF, โหมด) */
+  .seg {
+    display: inline-flex;
+    padding: 2px;
+    gap: 2px;
+    border-radius: 0.55rem;
+    background: var(--c-field);
+    border: 1px solid var(--c-line);
+  }
+  .seg > button {
+    height: 1.6rem;
+    padding: 0 0.6rem;
+    border-radius: 0.4rem;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--c-muted);
+    transition: background-color 120ms, color 120ms;
+  }
+  .seg > button:hover {
+    color: var(--c-fg);
+  }
+  .seg > button[aria-pressed='true'] {
+    background: var(--c-panel);
+    color: var(--c-fg);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.25), 0 0 0 1px var(--c-line);
+  }
+
+  /* แถบแจ้งสถานะ */
+  .note {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 12.5px;
+    border: 1px solid;
+  }
+  .note-ok {
+    color: var(--c-ok);
+    border-color: color-mix(in srgb, var(--c-ok) 30%, transparent);
+    background: color-mix(in srgb, var(--c-ok) 8%, transparent);
+  }
+  .note-warn {
+    color: var(--c-warn);
+    border-color: color-mix(in srgb, var(--c-warn) 30%, transparent);
+    background: color-mix(in srgb, var(--c-warn) 8%, transparent);
+  }
+  .note-bad {
+    color: var(--c-bad);
+    border-color: color-mix(in srgb, var(--c-bad) 30%, transparent);
+    background: color-mix(in srgb, var(--c-bad) 8%, transparent);
+  }
+
+  /* ป้ายเล็ก */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    height: 1.25rem;
+    padding: 0 0.45rem;
+    border-radius: 0.35rem;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  /* สวิตช์ */
+  .switch {
+    position: relative;
+    display: inline-flex;
+    width: 2rem;
+    height: 1.125rem;
+    flex-shrink: 0;
+    border-radius: 999px;
+    background: var(--c-line-strong);
+    transition: background-color 150ms;
+  }
+  .switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 999px;
+    background: #fff;
+    transition: transform 150ms;
+  }
+  .switch[aria-checked='true'] {
+    background: var(--c-accent);
+  }
+  .switch[aria-checked='true']::after {
+    transform: translateX(0.875rem);
+  }
+
+  /* ตาราง */
+  .table {
+    width: 100%;
+    font-size: 12.5px;
+  }
+  .table th {
+    padding: 0.4rem 0.6rem;
+    font-weight: 500;
+    font-size: 12px;
+    color: var(--c-muted);
+    text-align: left;
+    border-bottom: 1px solid var(--c-line);
+    white-space: nowrap;
+  }
+  .table td {
+    padding: 0.45rem 0.6rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--c-line) 70%, transparent);
+  }
+  .table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* select ใช้ลูกศรของเราเอง ให้เหมือนกันทุกเบราว์เซอร์ */
+select.field {
+  appearance: none;
+  padding-right: 1.9rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238792a6' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+}
+select.field option,
+select.field optgroup {
+  background: var(--c-panel);
+  color: var(--c-fg);
+}
+
+/* หัวข้อพับได้ในฟอร์ม */
+details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+details > summary .chev {
+  transition: transform 150ms;
+}
+details[open] > summary .chev {
+  transform: rotate(90deg);
 }

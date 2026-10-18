@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Timeframe } from '@zonedee/core';
 import { fetchAlertEvents } from './api';
+import { Icon, Logo, type IconName } from './components/Icon';
+import { setTheme, useTheme } from './theme';
 import AlertsView from './views/AlertsView';
 import BacktestView from './views/BacktestView';
 import ChartView, { type ChartNav } from './views/ChartView';
@@ -11,14 +13,16 @@ import WatchlistView from './views/WatchlistView';
 
 /** หน้าในแอป — เพิ่มหน้าใหม่ที่นี่ */
 const TABS = [
-  { id: 'chart', icon: '📈', label: 'กราฟ' },
-  { id: 'backtest', icon: '🧪', label: 'Backtest' },
-  { id: 'replay', icon: '🎯', label: 'Replay' },
-  { id: 'journal', icon: '📓', label: 'Journal' },
-  { id: 'alerts', icon: '🔔', label: 'แจ้งเตือน' },
-  { id: 'scanner', icon: '🔎', label: 'สแกน' },
-  { id: 'watchlist', icon: '⭐', label: 'ลงทุน' },
-] as const;
+  // เทรด forex / ทอง
+  { id: 'chart', icon: 'chart', label: 'กราฟ', group: 'trade' },
+  { id: 'backtest', icon: 'backtest', label: 'Backtest', group: 'trade' },
+  { id: 'replay', icon: 'replay', label: 'Replay', group: 'trade' },
+  { id: 'journal', icon: 'journal', label: 'Journal', group: 'trade' },
+  { id: 'alerts', icon: 'bell', label: 'แจ้งเตือน', group: 'trade' },
+  // หุ้น US
+  { id: 'scanner', icon: 'scan', label: 'สแกนหุ้น', group: 'stock' },
+  { id: 'watchlist', icon: 'invest', label: 'ลงทุน', group: 'stock' },
+] as const satisfies readonly { id: string; icon: IconName; label: string; group: 'trade' | 'stock' }[];
 type TabId = (typeof TABS)[number]['id'];
 
 const TAB_KEY = 'zonedee:tab';
@@ -40,6 +44,7 @@ function loadTab(): TabId {
 }
 
 export default function App() {
+  const theme = useTheme();
   const [tab, setTab] = useState<TabId>(loadTab);
   const [nav, setNav] = useState<ChartNav | null>(null);
   useEffect(() => {
@@ -97,31 +102,41 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-full">
-      <nav className="flex w-16 shrink-0 flex-col items-center gap-1 border-r border-line bg-panel py-2">
-        <span className="mb-2 text-[13px] font-bold leading-none tracking-tight text-white" title="zonedee">
-          z<span className="text-bull">d</span>
-        </span>
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            aria-current={tab === t.id ? 'page' : undefined}
-            className={`flex w-14 flex-col items-center rounded-md py-1.5 text-[10px] transition-colors ${
-              tab === t.id ? 'bg-blue-600/20 text-white' : 'text-slate-400 hover:bg-line hover:text-white'
-            }`}
-          >
-            <span className="relative text-base leading-none">
-              {t.icon}
-              {t.id === 'alerts' && unread > 0 && (
-                <span className="absolute -right-2.5 -top-1.5 rounded-full bg-red-600 px-1 text-[9px] font-semibold leading-tight text-white">
-                  {unread > 9 ? '9+' : unread}
-                </span>
-              )}
-            </span>
-            <span className="mt-1">{t.label}</span>
-          </button>
+    <div className="flex h-full bg-bg text-fg">
+      <nav className="flex w-[4.5rem] shrink-0 flex-col items-center border-r border-line bg-panel pb-3 pt-3">
+        <div className="mb-4" title="zonedee">
+          <Logo size={30} />
+        </div>
+        {TABS.map((t, k) => (
+          <div key={t.id} className="w-full px-1.5">
+            {k > 0 && TABS[k - 1]!.group !== t.group && <div className="mx-3 my-2 border-t border-line" />}
+            <button
+              onClick={() => setTab(t.id)}
+              aria-current={tab === t.id ? 'page' : undefined}
+              className={`relative mb-0.5 flex w-full flex-col items-center gap-1 rounded-lg py-2 text-[11px] leading-none transition-colors ${
+                tab === t.id ? 'bg-accent/12 text-fg' : 'text-muted hover:bg-hover hover:text-fg'
+              }`}
+            >
+              {tab === t.id && <span className="absolute -left-1.5 top-2 bottom-2 w-[3px] rounded-r bg-accent" />}
+              <span className={`relative ${tab === t.id ? 'text-accent' : ''}`}>
+                <Icon name={t.icon} size={20} />
+                {t.id === 'alerts' && unread > 0 && (
+                  <span className="absolute -right-2 -top-1.5 min-w-4 rounded-full bg-bear px-1 text-center text-[10px] font-semibold leading-4 text-white">
+                    {unread > 9 ? '9+' : unread}
+                  </span>
+                )}
+              </span>
+              <span>{t.label}</span>
+            </button>
+          </div>
         ))}
+        <button
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          title={theme === 'dark' ? 'เปลี่ยนเป็นธีมสว่าง' : 'เปลี่ยนเป็นธีมมืด'}
+          className="mt-auto flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-hover hover:text-fg"
+        >
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={18} />
+        </button>
       </nav>
       {/* หน้ากราฟเปิดค้างไว้ (ซ่อน) เพื่อจำตำแหน่ง/ข้อมูลที่โหลดแล้ว */}
       <div className={`min-w-0 flex-1 ${tab === 'chart' ? '' : 'hidden'}`}>

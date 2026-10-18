@@ -46,18 +46,19 @@ export const BO_HTF: Partial<Record<Timeframe, Timeframe[]>> = {
   D1: ['W1'],
 };
 
+/** สีของชั้นบนกราฟ — เลือกโทนกลางที่อ่านได้ทั้งพื้นมืดและพื้นขาว · พื้นโปร่งมาก ให้แท่งเทียนเด่นกว่า */
 const C = {
-  bull: '#22c55e',
-  bear: '#ef4444',
-  choch: '#f59e0b',
-  zoneR: { fill: 'rgba(239, 68, 68, 0.08)', line: 'rgba(239, 68, 68, 0.5)', text: '#fca5a5' },
-  zoneS: { fill: 'rgba(34, 197, 94, 0.08)', line: 'rgba(34, 197, 94, 0.5)', text: '#86efac' },
-  fvgBull: { fill: 'rgba(96, 165, 250, 0.14)', line: 'rgba(96, 165, 250, 0.45)' },
-  fvgBear: { fill: 'rgba(192, 132, 252, 0.14)', line: 'rgba(192, 132, 252, 0.45)' },
-  obBull: { fill: 'rgba(45, 212, 191, 0.16)', line: 'rgba(45, 212, 191, 0.7)' },
-  obBear: { fill: 'rgba(251, 146, 60, 0.16)', line: 'rgba(251, 146, 60, 0.7)' },
-  boBull: { fill: 'rgba(34, 197, 94, 0.18)', line: 'rgba(34, 197, 94, 0.9)' },
-  boBear: { fill: 'rgba(239, 68, 68, 0.18)', line: 'rgba(239, 68, 68, 0.9)' },
+  bull: '#20a874',
+  bear: '#e5485f',
+  choch: '#d99a1e',
+  zoneR: { fill: 'rgba(229, 72, 95, 0.075)', line: 'rgba(229, 72, 95, 0.28)', text: '#e5485f' },
+  zoneS: { fill: 'rgba(32, 168, 116, 0.075)', line: 'rgba(32, 168, 116, 0.28)', text: '#20a874' },
+  fvgBull: { fill: 'rgba(76, 132, 240, 0.10)', line: 'rgba(76, 132, 240, 0.45)', text: '#4c84f0' },
+  fvgBear: { fill: 'rgba(160, 102, 230, 0.10)', line: 'rgba(160, 102, 230, 0.45)', text: '#a066e6' },
+  obBull: { fill: 'rgba(22, 170, 160, 0.12)', line: 'rgba(22, 170, 160, 0.6)', text: '#16aaa0' },
+  obBear: { fill: 'rgba(230, 120, 40, 0.12)', line: 'rgba(230, 120, 40, 0.6)', text: '#e67828' },
+  boBull: { fill: 'rgba(32, 168, 116, 0.085)', fillHtf: 'rgba(32, 168, 116, 0.04)', line: 'rgba(32, 168, 116, 0.75)', text: '#20a874' },
+  boBear: { fill: 'rgba(229, 72, 95, 0.085)', fillHtf: 'rgba(229, 72, 95, 0.04)', line: 'rgba(229, 72, 95, 0.75)', text: '#e5485f' },
 };
 
 export interface BuildInput {
@@ -119,6 +120,7 @@ export function buildOverlays({ candles, tf, swingLength, zones, swings, layers 
         stroke: s.line,
         dashed: f.state === 'partial',
         label: 'FVG',
+        labelColor: s.text,
         labelPos: 'left',
       });
     }
@@ -139,6 +141,7 @@ export function buildOverlays({ candles, tf, swingLength, zones, swings, layers 
         stroke: s.line,
         dashed: o.state === 'tested',
         label: o.direction === 'bull' ? 'OB+' : 'OB−',
+        labelColor: s.text,
         labelPos: 'left',
       });
     }
@@ -155,11 +158,12 @@ export function buildOverlays({ candles, tf, swingLength, zones, swings, layers 
           end: null,
           top: b.top,
           bottom: b.bottom,
-          fill: htf ? s.fill.replace('0.18', '0.10') : s.fill,
+          fill: htf ? s.fillHtf : s.fill,
           stroke: s.line,
-          lineWidth: htf ? 2 : 1,
-          dashed: b.state === 'tested',
+          lineWidth: htf ? 1.5 : 1,
+          dashed: htf || b.state === 'tested',
           label: `Bo ${b.direction === 'bull' ? 'buy' : 'sell'} ${boxTf}`,
+          labelColor: s.text,
           labelPos: 'left',
         });
       }

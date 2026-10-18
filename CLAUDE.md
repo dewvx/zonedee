@@ -48,7 +48,8 @@ tools/mt5/       สคริปต์ Python ดึงราคาจาก MT5
 data/            ไฟล์ SQLite (ราคา, journal, แจ้งเตือน, watchlist) + รูป journal (ไม่ขึ้น git)
 .env             LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID (ไม่ขึ้น git — ดู .env.example)
 apps/web/        React 19 + Vite + Tailwind v4 + Lightweight Charts v5
-  src/App.tsx        แถบเมนูซ้าย + สลับหน้า (หน้ากราฟเปิดค้างไว้)
+  src/App.tsx        แถบเมนูซ้าย + สลับหน้า (หน้ากราฟเปิดค้างไว้) + ปุ่มสลับธีม
+  src/theme.ts       ธีมมืด/สว่าง (จำใน localStorage) + สีของกราฟ canvas
   src/views/         ChartView (กราฟ + เครื่องคิด lot), BacktestView, ReplayView, JournalView, AlertsView,
                      ScannerView, WatchlistView
   src/components/CandleChart.tsx  กราฟ — เวลาแสดงผลเลื่อนเป็นเวลาไทยใน toChartTime (ข้อมูลจริงยังเป็น UTC)
@@ -78,7 +79,10 @@ docs/roadmap.md  phase และสถานะ
 - TypeScript strict, ESM, import ภายใน core ไม่ใส่นามสกุลไฟล์
 - ฟังก์ชันใน core รับ `readonly Candle[]` คืนค่าใหม่ ไม่ mutate input
 - ชื่อตัวแปร/ฟังก์ชันภาษาอังกฤษ คอมเมนต์และข้อความ UI ภาษาไทยได้
-- web ใช้ Tailwind utility ธีมมืด สีขึ้น `bull` (#22c55e) สีลง `bear` (#ef4444)
+- web ใช้ Tailwind + โทเคนสีตามหน้าที่ใน `apps/web/src/index.css` (bg, panel, field, hover, line, fg, fg-2, muted, faint, accent, bull, bear, ok, warn, bad) — มีธีมมืด/สว่าง ห้ามใช้สีตายตัวอย่าง `text-white` / `slate-*` ในหน้า
+- ชิ้นส่วนที่ใช้ซ้ำ: class `btn` / `btn-primary` / `field` / `label` / `card` / `chip` / `seg` / `note-*` / `badge` / `switch` / `table` (index.css) และ `components/ui.tsx` (PageHeader, SidePanel, Section, Field, Empty, Stat, Note), ไอคอนเส้นใน `components/Icon.tsx`
+- สีที่วาดบน canvas (กราฟ) อยู่ใน `theme.ts` (CHART_PALETTE) — แก้คู่กับ index.css
+- ฟอนต์ IBM Plex Sans Thai (Google Fonts) · ตัวเลขใช้ `tabular-nums`
 
 ## การสื่อสาร
 

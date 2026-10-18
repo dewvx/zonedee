@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { ColorType, LineSeries, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts';
 import type { EquityPoint } from '@zonedee/core';
 import { toChartTime } from '../chartTime';
+import { CHART_PALETTE, FONT, useTheme } from '../theme';
 
 interface Props {
   points: EquityPoint[];
@@ -16,21 +17,27 @@ export function EquityChart({ points, splitTime, mode }: Props) {
   const chartRef = useRef<IChartApi | null>(null);
   const inRef = useRef<ISeriesApi<'Line'> | null>(null);
   const outRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const pal = CHART_PALETTE[useTheme()];
 
   useEffect(() => {
     const chart = createChart(boxRef.current!, {
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: '#94a3b8', fontSize: 11 },
-      grid: { vertLines: { color: '#1a1f2b' }, horzLines: { color: '#1a1f2b' } },
-      rightPriceScale: { borderColor: '#232937' },
-      timeScale: { borderColor: '#232937', timeVisible: true },
+      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: pal.text, fontSize: 11, fontFamily: FONT, attributionLogo: false },
+      grid: { vertLines: { visible: false }, horzLines: { color: pal.grid } },
+      rightPriceScale: { borderVisible: false },
+      timeScale: { borderVisible: false, timeVisible: true },
       handleScale: { mouseWheel: false },
     });
-    inRef.current = chart.addSeries(LineSeries, { color: '#60a5fa', lineWidth: 2, priceLineVisible: false });
-    outRef.current = chart.addSeries(LineSeries, { color: '#fbbf24', lineWidth: 2, priceLineVisible: false });
+    inRef.current = chart.addSeries(LineSeries, { color: '#6ea8fe', lineWidth: 2, priceLineVisible: false });
+    outRef.current = chart.addSeries(LineSeries, { color: '#f5b94a', lineWidth: 2, priceLineVisible: false });
     chartRef.current = chart;
     return () => chart.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- สีอัปเดตใน effect ด้านล่าง
   }, []);
+
+  useEffect(() => {
+    chartRef.current?.applyOptions({ layout: { textColor: pal.text }, grid: { horzLines: { color: pal.grid } } });
+  }, [pal]);
 
   useEffect(() => {
     // เวลาซ้ำ (หลายเทรดปิดแท่งเดียวกัน) → เลื่อนทีละ 1 วินาที ให้ Lightweight Charts รับได้

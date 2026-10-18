@@ -26,13 +26,12 @@ import { LayerBar } from '../components/LayerBar';
 import { ZonePanel } from '../components/ZonePanel';
 import { BO_HTF, buildOverlays, type LayerToggles } from '../overlays';
 import { formatThaiTime } from '../format';
+import { Icon } from '../components/Icon';
+import { CHART_PALETTE, useTheme } from '../theme';
 import { loadSettings, saveSettings, type RiskSettings, type Settings, type ZoneSettings } from '../settings';
 
-// ค่าตามท่า 3 ของริวเรน (docs/rules.md)
-const EMA_PRESET: EmaSetting[] = [
-  { period: 9, color: '#60a5fa' },
-  { period: 21, color: '#f87171' },
-];
+// ค่าตามท่า 3 ของริวเรน (docs/rules.md) — สีตามธีม
+const EMA_PERIODS = [9, 21];
 
 const PAGE_SIZE = 1000;
 /** อัปเดตอัตโนมัติทุกกี่ ms */
@@ -238,7 +237,12 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
 
   const prev = candles.at(-2);
   const change = last && prev ? last.close - prev.close : 0;
-  const emas = useMemo(() => (showEma ? EMA_PRESET : []), [showEma]);
+  const changePct = last && prev && prev.close ? (change / prev.close) * 100 : 0;
+  const pal = CHART_PALETTE[useTheme()];
+  const emas = useMemo<EmaSetting[]>(
+    () => (showEma ? EMA_PERIODS.map((period, k) => ({ period, color: pal.ema[k]! })) : []),
+    [showEma, pal],
+  );
 
   // แนวรับแนวต้าน คำนวณจากแท่งที่โหลดมาทั้งหมด ด้วย core ตัวเดียวกับที่ backtest จะใช้
   const { swingLength, zoneMergeAtr, maxZones, ryuMode, show: showZones, showSwings } = zoneSettings;
@@ -375,16 +379,16 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
     const fmt = (v: number) => v.toFixed(priceDigits);
     if (plan.entry !== null) {
       const lotText = position?.valid ? ` · ${position.lots} ${contract?.spec.unit === 'share' ? 'หุ้น' : 'lot'}` : '';
-      lines.push({ id: 'entry', price: plan.entry, color: '#cbd5e1', title: `Entry${lotText}`, draggable: true });
+      lines.push({ id: 'entry', price: plan.entry, color: '#8792a6', title: `Entry${lotText}`, draggable: true });
     }
     if (plan.sl !== null) {
       const loss = position?.valid ? ` −${position.actualRisk.toFixed(2)} ${accountCur}` : '';
-      lines.push({ id: 'sl', price: plan.sl, color: '#ef4444', title: `SL ${fmt(plan.sl)}${loss}`, draggable: true });
+      lines.push({ id: 'sl', price: plan.sl, color: '#e5485f', title: `SL ${fmt(plan.sl)}${loss}`, draggable: true });
     }
     if (plan.tp !== null) {
       const gain = position?.valid && position.profit !== null ? ` +${position.profit.toFixed(2)} ${accountCur}` : '';
       const rr = position?.rr ? ` · 1:${position.rr.toFixed(2)}` : '';
-      lines.push({ id: 'tp', price: plan.tp, color: '#22c55e', title: `TP ${fmt(plan.tp)}${gain}${rr}`, draggable: true });
+      lines.push({ id: 'tp', price: plan.tp, color: '#20a874', title: `TP ${fmt(plan.tp)}${gain}${rr}`, draggable: true });
     }
     return lines;
   }, [toolOpen, plan, position, priceDigits, contract, accountCur]);
@@ -417,142 +421,139 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <header className="flex flex-wrap items-center gap-3 border-b border-line bg-panel px-4 py-2">
-        <select
-          value={symbol}
-          onChange={(e) => update({ symbol: e.target.value })}
-          className="rounded-md border border-line bg-surface px-2 py-1 text-sm text-white outline-none focus:border-blue-500"
-        >
-          <optgroup label="Forex / ทอง">
-            {forexSymbols.map((s) => (
-              <option key={s.symbol} value={s.symbol}>
-                {s.symbol} · {s.description}
-                {s.data ? '' : ' (ยังไม่มีข้อมูล)'}
-              </option>
-            ))}
-          </optgroup>
-          <optgroup label="หุ้น US">
-            {stockSymbols.map((s) => (
-              <option key={s.symbol} value={s.symbol}>
-                {s.symbol} · {s.description}
-                {s.data ? '' : ' (ยังไม่มีข้อมูล)'}
-              </option>
-            ))}
-          </optgroup>
-        </select>
-
-        <div className="flex overflow-hidden rounded-md border border-line">
-          {timeframes.map((t) => (
-            <button
-              key={t}
-              onClick={() => update({ tf: t })}
-              className={`px-2.5 py-1 text-xs font-medium transition-colors ${
-                t === tf ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-line hover:text-white'
-              }`}
+      <header className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line bg-panel px-4 py-2.5">
+        {/* symbol + ราคา = จุดที่ตาไปก่อน */}
+        <div className="flex items-center gap-4">
+          <label className="group relative block cursor-pointer rounded-lg px-2 py-1 hover:bg-hover">
+            <span className="flex items-center gap-1.5 text-[17px] font-semibold leading-tight tracking-tight text-fg">
+              {symbol}
+              <Icon name="right" size={14} className="rotate-90 text-muted group-hover:text-fg" />
+            </span>
+            <span className="block max-w-56 truncate text-xs leading-tight text-muted">{info?.description ?? ''}</span>
+            {/* select จริงซ้อนทับแบบโปร่งใส — ได้รายการของระบบ (เลื่อน/พิมพ์หาได้) แต่หน้าตาเป็นของเรา */}
+            <select
+              value={symbol}
+              onChange={(e) => update({ symbol: e.target.value })}
+              aria-label="เลือก symbol"
+              className="absolute inset-0 cursor-pointer opacity-0"
             >
+              <optgroup label="Forex / ทอง">
+                {forexSymbols.map((s) => (
+                  <option key={s.symbol} value={s.symbol}>
+                    {s.symbol} — {s.description}
+                    {s.data ? '' : ' (ยังไม่มีข้อมูล)'}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="หุ้น US">
+                {stockSymbols.map((s) => (
+                  <option key={s.symbol} value={s.symbol}>
+                    {s.symbol} — {s.description}
+                    {s.data ? '' : ' (ยังไม่มีข้อมูล)'}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+          </label>
+          {last && info && (
+            <div className="flex items-baseline gap-2.5 tabular-nums">
+              <span className="text-[22px] font-semibold leading-none tracking-tight text-fg">
+                {last.close.toLocaleString('en-US', { minimumFractionDigits: info.digits, maximumFractionDigits: info.digits })}
+              </span>
+              <span className={`text-[13px] font-medium ${change >= 0 ? 'text-bull' : 'text-bear'}`}>
+                {change >= 0 ? '+' : ''}
+                {change.toFixed(info.digits)} ({changePct >= 0 ? '+' : ''}
+                {changePct.toFixed(2)}%)
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="seg" role="group" aria-label="Timeframe">
+          {timeframes.map((t) => (
+            <button key={t} onClick={() => update({ tf: t })} aria-pressed={t === tf}>
               {t}
             </button>
           ))}
         </div>
 
-        <div className="flex items-center gap-2 border-l border-line pl-3">
+        <div className="ml-auto flex items-center gap-3">
+          {lastBarOpen && (
+            <span className="tabular-nums text-xs text-muted" title="แท่งล่าสุดยังไม่ปิด (วาดจางไว้)">
+              แท่งปิดใน <span className="font-medium text-fg-2">{formatCountdown(lastCloseAt - now)}</span>
+            </span>
+          )}
+          <button
+            onClick={() => update({ autoUpdate: !autoUpdate })}
+            className="flex items-center gap-2 text-xs text-muted hover:text-fg"
+            title={info?.market === 'us-stock' ? 'ดึงข้อมูลใหม่ทุก 5 นาที' : 'ดึงข้อมูลใหม่ทุก 1 นาที'}
+          >
+            <span role="switch" aria-checked={autoUpdate} className="switch" />
+            อัปเดตอัตโนมัติ
+          </button>
           <button
             onClick={() => void runUpdate()}
             disabled={updating}
             title={`ดึงข้อมูลล่าสุดของ ${symbol} จาก ${info ? SOURCE_LABEL[info.source] : 'แหล่งข้อมูล'}`}
-            className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-xs font-medium text-slate-300 transition-colors hover:bg-line hover:text-white disabled:cursor-wait disabled:opacity-60"
+            className="btn"
           >
-            <span className={updating ? 'inline-block animate-spin' : 'inline-block'}>⟳</span>
+            <Icon name="refresh" size={15} className={updating ? 'animate-spin' : ''} />
             {updating ? 'กำลังอัปเดต…' : 'อัปเดต'}
           </button>
-          <label
-            className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-400"
-            title={info?.market === 'us-stock' ? 'ทุก 5 นาที' : 'ทุก 1 นาที'}
-          >
-            <input
-              type="checkbox"
-              checked={autoUpdate}
-              onChange={(e) => update({ autoUpdate: e.target.checked })}
-              className="accent-blue-500"
-            />
-            อัตโนมัติ
-          </label>
         </div>
-
-        {last && info && (
-          <span className="ml-auto flex items-baseline gap-3 font-mono text-sm">
-            {lastBarOpen && (
-              <span className="text-xs text-slate-400" title="แท่งล่าสุดยังไม่ปิด (วาดจางไว้)">
-                แท่งปิดใน <span className="text-slate-200">{formatCountdown(lastCloseAt - now)}</span>
-              </span>
-            )}
-            <span>
-              <span className="text-white">{last.close.toFixed(info.digits)}</span>{' '}
-              <span className={change >= 0 ? 'text-bull' : 'text-bear'}>
-                {change >= 0 ? '+' : ''}
-                {change.toFixed(info.digits)}
-              </span>
-            </span>
-          </span>
-        )}
       </header>
 
       {/* แถวเครื่องมือ: indicator + ชั้นโครงสร้างราคา */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-line bg-panel/60 px-4 py-1.5">
-        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-400">
-          <input
-            type="checkbox"
-            checked={showEma}
-            onChange={(e) => update({ showEma: e.target.checked })}
-            className="accent-blue-500"
-          />
+      <div className="flex flex-wrap items-center gap-2 border-b border-line bg-panel px-4 py-2">
+        <button
+          onClick={() => update({ showEma: !showEma })}
+          aria-pressed={showEma}
+          title="EMA 9 / 21 (ท่า 3 ของริวเรน)"
+          className="chip"
+        >
+          <span className="inline-flex gap-[2px]">
+            {pal.ema.map((c) => (
+              <span key={c} className="h-[3px] w-2.5 rounded-full" style={{ background: c, opacity: showEma ? 1 : 0.35 }} />
+            ))}
+          </span>
           EMA 9 / 21
-        </label>
-        <span className="h-4 w-px bg-line" />
+        </button>
         <ZonePanel value={zoneSettings} onChange={updateZones} count={zones.length} />
-        <span className="h-4 w-px bg-line" />
+        <span className="mx-1 h-5 w-px bg-line" />
         <LayerBar layers={layers} counts={visuals.counts} onToggle={toggleLayer} htfs={BO_HTF[tf] ?? []} />
         <button
           onClick={() => setToolOpen((o) => !o)}
           aria-pressed={toolOpen}
           title="วาง Entry / SL / TP บนกราฟ แล้วคำนวณ lot ตามความเสี่ยง (Esc = ปิด)"
-          className={`ml-auto flex items-center gap-1.5 rounded-md border px-2.5 py-0.5 text-xs font-medium transition-colors ${
-            toolOpen ? 'border-blue-500 bg-blue-600 text-white' : 'border-line text-slate-300 hover:bg-line hover:text-white'
-          }`}
+          className={`btn btn-sm ml-auto ${toolOpen ? 'btn-primary' : ''}`}
         >
-          📐 คำนวณ lot
+          <Icon name="ruler" size={15} />
+          คำนวณ lot
         </button>
       </div>
 
-      {source === 'sample' && (
-        <div className="border-b border-amber-900/50 bg-amber-950/40 px-4 py-1 text-xs text-amber-300">
-          ยังไม่มีข้อมูลจริงของ {symbol} — กำลังแสดงข้อมูลจำลอง · กดปุ่ม <b>อัปเดต</b> ด้านบนเพื่อดึงข้อมูลจริง
-        </div>
-      )}
-      {error && (
-        <div className="border-b border-red-900/50 bg-red-950/40 px-4 py-1 text-xs text-red-300">
-          โหลดข้อมูลไม่ได้: {error} (เปิด server อยู่ไหม? ลอง <code>npm run dev</code>)
-        </div>
-      )}
-      {status && (
-        <div
-          className={`flex items-center border-b px-4 py-1 text-xs ${
-            status.kind === 'ok'
-              ? 'border-emerald-900/50 bg-emerald-950/40 text-emerald-300'
-              : status.kind === 'warn'
-                ? 'border-amber-900/50 bg-amber-950/40 text-amber-300'
-                : 'border-red-900/50 bg-red-950/40 text-red-300'
-          }`}
-        >
-          <span>{status.text}</span>
-          <button onClick={() => setStatus(null)} className="ml-auto opacity-60 hover:opacity-100" aria-label="ปิด">
-            ✕
-          </button>
-        </div>
-      )}
-
       <div className="flex min-h-0 flex-1 overflow-hidden">
       <main className={`relative min-h-0 min-w-0 flex-1 ${toolOpen ? 'cursor-crosshair' : ''}`}>
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex flex-col items-center gap-2 px-16">
+          {source === 'sample' && (
+            <div className="note note-warn pointer-events-auto bg-panel/95 shadow-lg">
+              ยังไม่มีข้อมูลจริงของ {symbol} — ตอนนี้เป็นข้อมูลจำลอง กด <b>อัปเดต</b> มุมขวาบนเพื่อดึงข้อมูลจริง
+            </div>
+          )}
+          {error && (
+            <div className="note note-bad pointer-events-auto bg-panel/95 shadow-lg">
+              โหลดข้อมูลไม่ได้: {error} — เปิด server อยู่ไหม? ลอง <code>npm run dev</code>
+            </div>
+          )}
+          {status && (
+            <div className={`note pointer-events-auto bg-panel/95 shadow-lg ${status.kind === 'ok' ? 'note-ok' : status.kind === 'warn' ? 'note-warn' : 'note-bad'}`}>
+              <span>{status.text}</span>
+              <button onClick={() => setStatus(null)} className="ml-2 opacity-60 hover:opacity-100" aria-label="ปิด">
+                <Icon name="close" size={14} />
+              </button>
+            </div>
+          )}
+        </div>
         <CandleChart
           candles={candles}
           digits={info?.digits ?? 2}
@@ -568,7 +569,7 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
           apiRef={chartApi}
         />
         {(loading || loadingOlder) && (
-          <div className="pointer-events-none absolute left-3 top-3 rounded bg-black/50 px-2 py-0.5 text-xs text-slate-400">
+          <div className="pointer-events-none absolute bottom-10 left-3 rounded-md bg-panel/90 px-2 py-1 text-xs text-muted shadow">
             {loadingOlder ? 'กำลังโหลดแท่งย้อนหลัง…' : 'กำลังโหลด…'}
           </div>
         )}
@@ -600,7 +601,7 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
       )}
       </div>
 
-      <footer className="flex flex-wrap items-center gap-x-4 border-t border-line bg-panel px-4 py-1 text-[11px] text-slate-500">
+      <footer className="flex flex-wrap items-center gap-x-4 border-t border-line bg-panel px-4 py-1 text-xs text-faint">
         {source && <span>แหล่งข้อมูล: {SOURCE_LABEL[source]}</span>}
         {info?.coverage[tf] && source !== 'sample' && (
           <span>

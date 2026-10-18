@@ -13,10 +13,12 @@ import {
 } from '@zonedee/core';
 import { fetchCandles, fetchCandlesAfter, fetchStrategies, fetchSymbols, runBacktest, type StrategyInfo, type SymbolSummary } from '../api';
 import { CandleChart, type ChartPriceLine } from '../components/CandleChart';
-import { inputCls } from '../components/ParamForm';
 import { toChartTime } from '../chartTime';
 import { fmtPct, fmtR, formatThaiTime } from '../format';
 import { DEFAULT_LAYERS, buildOverlays } from '../overlays';
+import { Icon } from '../components/Icon';
+import { Field, Note, Section, SidePanel, Stat } from '../components/ui';
+import { CHART_PALETTE, useTheme } from '../theme';
 
 const HISTORY_BARS = 300;
 const FUTURE_BARS = 200;
@@ -278,9 +280,9 @@ export default function ReplayView() {
       const risk = Math.abs(plan.entry - plan.sl);
       const rr = risk > 0 ? Math.abs(plan.tp - plan.entry) / risk : 0;
       const drag = phase === 'placed';
-      lines.push({ id: 'entry', price: plan.entry, color: '#cbd5e1', title: `${plan.dir === 'long' ? 'BUY' : 'SELL'} ${f(plan.entry)}` });
-      lines.push({ id: 'sl', price: plan.sl, color: '#ef4444', title: `SL ${f(plan.sl)}`, draggable: drag });
-      lines.push({ id: 'tp', price: plan.tp, color: '#22c55e', title: `TP ${f(plan.tp)} · 1:${rr.toFixed(2)}`, draggable: drag });
+      lines.push({ id: 'entry', price: plan.entry, color: '#8792a6', title: `${plan.dir === 'long' ? 'BUY' : 'SELL'} ${f(plan.entry)}` });
+      lines.push({ id: 'sl', price: plan.sl, color: '#e5485f', title: `SL ${f(plan.sl)}`, draggable: drag });
+      lines.push({ id: 'tp', price: plan.tp, color: '#20a874', title: `TP ${f(plan.tp)} · 1:${rr.toFixed(2)}`, draggable: drag });
     }
     const st = round?.strategyTrade;
     if (st && phase === 'done') {
@@ -316,7 +318,7 @@ export default function ReplayView() {
           time: toChartTime(ex.time),
           position: result.direction === 'long' ? 'aboveBar' : 'belowBar',
           shape: 'circle',
-          color: result.r >= 0 ? '#22c55e' : '#ef4444',
+          color: result.r >= 0 ? '#20a874' : '#e5485f',
           text: fmtR(result.r),
         });
       }
@@ -334,40 +336,57 @@ export default function ReplayView() {
     return { rounds: log.length, trades: trades.length, wins, total, avg: trades.length ? total / trades.length : 0 };
   }, [log]);
 
+  const pal = CHART_PALETTE[useTheme()];
+  const emas = useMemo(() => [9, 21].map((period, k) => ({ period, color: pal.ema[k]! })), [pal]);
   const st = round?.strategyTrade;
   const showFuture = phase === 'reveal' || phase === 'done';
 
   return (
     <div className="flex h-full min-w-0">
-      <aside className="w-64 shrink-0 overflow-y-auto border-r border-line bg-panel p-3 text-xs">
-        <h2 className="text-sm font-semibold text-white">Replay — ฝึกทาย</h2>
-        <p className="mt-1 leading-relaxed text-slate-400">
-          ซ่อนแท่งอนาคตไว้ ดูกราฟแล้วตัดสินใจ BUY / SELL / ไม่เทรด แล้วเฉลยว่าราคาไปทางไหน — แทน "ดูกราฟเปล่าจนจำได้" ในไฟล์
-        </p>
+      <SidePanel
+        width="w-72"
+        footer={
+          <>
+            <button onClick={() => void newRound()} disabled={phase === 'loading' || phase === 'reveal'} className="btn btn-primary w-full">
+              <Icon name="play" size={14} />
+              {phase === 'loading' ? 'กำลังสุ่ม…' : round ? 'ข้อต่อไป' : 'เริ่มฝึก'}
+            </button>
+            <p className="text-xs leading-relaxed text-faint">
+              ปุ่มลัด: → แท่งถัดไป, B ซื้อ, S ขาย, Enter เฉลย, Esc ยกเลิก, N ข้อต่อไป
+            </p>
+          </>
+        }
+      >
+        <div>
+          <h1 className="text-[15px] font-semibold leading-tight text-fg">Replay</h1>
+          <p className="mt-1 text-xs leading-relaxed text-muted">
+            ซ่อนแท่งอนาคตไว้ ดูกราฟแล้วตัดสินใจ BUY / SELL / ไม่เทรด แล้วเฉลยว่าราคาไปทางไหน
+          </p>
+        </div>
+        {error && <Note kind="bad">{error}</Note>}
 
-        <div className="mt-3 space-y-2">
-          <label className="block">
-            <span className="mb-0.5 block text-[11px] text-slate-400">Symbol</span>
-            <select value={settings.symbol} onChange={(e) => updateSettings({ symbol: e.target.value })} className={inputCls}>
-              {symbols.map((s) => (
-                <option key={s.symbol} value={s.symbol} disabled={!s.data}>
-                  {s.symbol}
-                  {s.data ? '' : ' (ยังไม่มีข้อมูล)'}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-0.5 block text-[11px] text-slate-400">TF</span>
-            <select value={settings.tf} onChange={(e) => updateSettings({ tf: e.target.value as Timeframe })} className={inputCls}>
-              {(info?.timeframes ?? [settings.tf]).map((t) => (
-                <option key={t}>{t}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-0.5 block text-[11px] text-slate-400">สุ่มจุดแบบไหน</span>
-            <select value={settings.source} onChange={(e) => updateSettings({ source: e.target.value })} className={inputCls}>
+        <Section title="ตั้งค่า">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Symbol">
+              <select value={settings.symbol} onChange={(e) => updateSettings({ symbol: e.target.value })} className="field">
+                {symbols.map((s) => (
+                  <option key={s.symbol} value={s.symbol} disabled={!s.data}>
+                    {s.symbol}
+                    {s.data ? '' : ' (ยังไม่มีข้อมูล)'}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="TF">
+              <select value={settings.tf} onChange={(e) => updateSettings({ tf: e.target.value as Timeframe })} className="field">
+                {(info?.timeframes ?? [settings.tf]).map((t) => (
+                  <option key={t}>{t}</option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <Field label="สุ่มจุดแบบไหน">
+            <select value={settings.source} onChange={(e) => updateSettings({ source: e.target.value })} className="field">
               <option value="random">สุ่มทั่วไป</option>
               {strategies
                 .filter((s) => s.timeframes.includes(settings.tf))
@@ -377,152 +396,70 @@ export default function ReplayView() {
                   </option>
                 ))}
             </select>
+          </Field>
+          <label className="flex cursor-pointer items-start gap-2 text-fg-2">
+            <input type="checkbox" checked={settings.showStructure} onChange={(e) => updateSettings({ showStructure: e.target.checked })} className="mt-1" />
+            <span>
+              แสดงโซน + โครงสร้าง
+              <span className="block text-xs text-faint">คิดจากแท่งที่เห็นเท่านั้น ไม่รู้อนาคต</span>
+            </span>
           </label>
-          <label className="flex cursor-pointer items-center gap-2 text-slate-300">
-            <input type="checkbox" checked={settings.showStructure} onChange={(e) => updateSettings({ showStructure: e.target.checked })} className="accent-blue-500" />
-            แสดงโซน + โครงสร้าง (คิดจากแท่งที่เห็นเท่านั้น)
-          </label>
-        </div>
+        </Section>
 
-        <button
-          onClick={() => void newRound()}
-          disabled={phase === 'loading' || phase === 'reveal'}
-          className="mt-3 w-full rounded-md bg-blue-600 px-3 py-1.5 font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-        >
-          {phase === 'loading' ? 'กำลังสุ่ม…' : round ? 'ข้อต่อไป (N)' : 'เริ่ม'}
-        </button>
-        {error && <p className="mt-2 text-red-300">{error}</p>}
-
-        <div className="mt-4 border-t border-line pt-3">
-          <div className="mb-1 flex items-center text-[11px] font-medium text-slate-300">
-            คะแนนสะสม
-            {log.length > 0 && (
-              <button onClick={() => setStored((s) => ({ ...s, log: [] }))} className="ml-auto text-[10px] font-normal text-slate-500 underline hover:text-slate-300">
-                ล้าง
+        <Section title="คะแนนสะสม">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-3">
+            <Stat label="ทาย / เทรด" value={`${score.rounds} / ${score.trades}`} />
+            <Stat label="ชนะ" value={score.trades ? fmtPct(score.wins / score.trades) : '-'} />
+            <Stat label="รวม" value={fmtR(score.total, 1)} tone={score.total > 0 ? 'up' : score.total < 0 ? 'down' : undefined} />
+            <Stat label="เฉลี่ย/ไม้" value={score.trades ? fmtR(score.avg) : '-'} tone={score.avg > 0 ? 'up' : score.avg < 0 ? 'down' : undefined} />
+          </div>
+          {log.length > 0 && (
+            <>
+              <ul className="divide-y divide-line rounded-lg border border-line">
+                {log
+                  .slice(-8)
+                  .reverse()
+                  .map((l) => (
+                    <li key={l.at} className="flex items-center gap-2 px-3 py-1.5 text-xs text-muted">
+                      <span className="text-fg-2">
+                        {l.symbol} {l.tf}
+                      </span>
+                      <span className={l.guess === 'long' ? 'text-bull' : l.guess === 'short' ? 'text-bear' : ''}>
+                        {l.guess === 'long' ? 'BUY' : l.guess === 'short' ? 'SELL' : 'ข้าม'}
+                      </span>
+                      <span className={`ml-auto font-medium tabular-nums ${(l.r ?? 0) > 0 ? 'text-bull' : (l.r ?? 0) < 0 ? 'text-bear' : ''}`}>
+                        {l.r === null ? '—' : fmtR(l.r)}
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+              <button onClick={() => setStored((s) => ({ ...s, log: [] }))} className="text-xs text-accent hover:underline">
+                ล้างคะแนน
               </button>
-            )}
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="rounded border border-line bg-surface px-2 py-1">
-              <div className="text-[10px] text-slate-500">ทาย / เทรด</div>
-              <div className="font-mono text-white">
-                {score.rounds} / {score.trades}
-              </div>
-            </div>
-            <div className="rounded border border-line bg-surface px-2 py-1">
-              <div className="text-[10px] text-slate-500">ชนะ</div>
-              <div className="font-mono text-white">{score.trades ? fmtPct(score.wins / score.trades) : '-'}</div>
-            </div>
-            <div className="rounded border border-line bg-surface px-2 py-1">
-              <div className="text-[10px] text-slate-500">รวม</div>
-              <div className={`font-mono ${score.total >= 0 ? 'text-bull' : 'text-bear'}`}>{fmtR(score.total, 1)}</div>
-            </div>
-            <div className="rounded border border-line bg-surface px-2 py-1">
-              <div className="text-[10px] text-slate-500">เฉลี่ย/ไม้</div>
-              <div className={`font-mono ${score.avg >= 0 ? 'text-bull' : 'text-bear'}`}>{score.trades ? fmtR(score.avg) : '-'}</div>
-            </div>
-          </div>
-          <ul className="mt-2 space-y-0.5">
-            {log
-              .slice(-12)
-              .reverse()
-              .map((l) => (
-                <li key={l.at} className="flex gap-2 font-mono text-[10px] text-slate-400">
-                  <span>{l.symbol}</span>
-                  <span>{l.tf}</span>
-                  <span className={l.guess === 'long' ? 'text-bull' : l.guess === 'short' ? 'text-bear' : ''}>
-                    {l.guess === 'long' ? 'BUY' : l.guess === 'short' ? 'SELL' : 'ข้าม'}
-                  </span>
-                  <span className={`ml-auto ${(l.r ?? 0) > 0 ? 'text-bull' : (l.r ?? 0) < 0 ? 'text-bear' : ''}`}>{l.r === null ? '-' : fmtR(l.r)}</span>
-                </li>
-              ))}
-          </ul>
-        </div>
-        <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
-          ปุ่มลัด: → แท่งถัดไป · B ซื้อ · S ขาย · Enter เฉลย · Esc ยกเลิก · N ข้อต่อไป · ลากเส้น SL/TP ได้ · ไม่คิด spread
-        </p>
-      </aside>
+            </>
+          )}
+        </Section>
+      </SidePanel>
 
       <main className="relative flex min-w-0 flex-1 flex-col">
-        <div className="flex flex-wrap items-center gap-2 border-b border-line bg-panel px-4 py-2 text-xs">
+        <div className="flex min-h-14 items-center gap-3 border-b border-line bg-panel px-5">
           {round && lastVisible ? (
             <>
-              <span className="text-slate-400">
-                {settings.symbol} {settings.tf} · ตอนนี้ {formatThaiTime(lastVisible.time + TIMEFRAME_MS[settings.tf])}
+              <span className="text-[15px] font-semibold text-fg">
+                {settings.symbol} <span className="font-normal text-muted">{settings.tf}</span>
               </span>
-              {phase === 'guess' && (
-                <>
-                  <button
-                    onClick={() => setRound({ ...round, cut: Math.min(round.candles.length - 20, round.cut + 1) })}
-                    className="rounded border border-line px-2 py-1 text-slate-300 hover:bg-line"
-                  >
-                    แท่งถัดไป →
-                  </button>
-                  <button onClick={() => choose('long')} className="rounded bg-bull/90 px-3 py-1 font-semibold text-black hover:bg-bull">
-                    BUY (B)
-                  </button>
-                  <button onClick={() => choose('short')} className="rounded bg-bear/90 px-3 py-1 font-semibold text-white hover:bg-bear">
-                    SELL (S)
-                  </button>
-                  <button onClick={() => reveal(true)} className="rounded border border-line px-2 py-1 text-slate-300 hover:bg-line">
-                    ไม่เทรด — เฉลยเลย
-                  </button>
-                </>
-              )}
-              {phase === 'placed' && plan && (
-                <>
-                  <span className="text-slate-300">ลากเส้น SL / TP บนกราฟได้</span>
-                  <button onClick={() => reveal(false)} className="rounded bg-blue-600 px-3 py-1 font-semibold text-white hover:bg-blue-500">
-                    ยืนยัน + เฉลย (Enter)
-                  </button>
-                  <button
-                    onClick={() => {
-                      setPlan(null);
-                      setPhase('guess');
-                    }}
-                    className="rounded border border-line px-2 py-1 text-slate-300 hover:bg-line"
-                  >
-                    ยกเลิก
-                  </button>
-                </>
-              )}
-              {phase === 'done' && (
-                <span className="flex flex-wrap items-center gap-3">
-                  {plan ? (
-                    result ? (
-                      <span className={`font-semibold ${result.r > 0 ? 'text-bull' : 'text-bear'}`}>
-                        คุณ: {fmtR(result.r)} ({result.exitReason === 'tp' ? 'ถึง TP' : result.exitReason === 'sl' ? 'โดน SL' : 'ยังไม่จบในช่วงที่เฉลย'})
-                      </span>
-                    ) : (
-                      <span className="text-slate-400">ราคาเปิดกระโดดเลย SL/TP — ไม่ได้เข้า</span>
-                    )
-                  ) : (
-                    <span className="text-slate-400">ข้ามข้อนี้</span>
-                  )}
-                  {st && (
-                    <span className="text-slate-300">
-                      ท่า {round.strategyName}: {st.direction === 'long' ? 'BUY' : 'SELL'}{' '}
-                      <span className={st.r > 0 ? 'text-bull' : 'text-bear'}>{fmtR(st.r)}</span>
-                    </span>
-                  )}
-                  <button onClick={() => void newRound()} className="rounded bg-blue-600 px-3 py-1 font-semibold text-white hover:bg-blue-500">
-                    ข้อต่อไป (N)
-                  </button>
-                </span>
-              )}
+              <span className="text-xs text-muted">ตอนนี้ {formatThaiTime(lastVisible.time + TIMEFRAME_MS[settings.tf])}</span>
+              {round.strategyName && phase !== 'done' && <span className="badge bg-accent/12 text-accent">จุดที่ {round.strategyName} เกิดสัญญาณ</span>}
             </>
           ) : (
-            <span className="text-slate-400">เลือก symbol / TF แล้วกด "เริ่ม"</span>
+            <span className="text-[13px] text-muted">เลือก symbol / TF แล้วกด "เริ่มฝึก"</span>
           )}
         </div>
         <div className={`relative min-h-0 flex-1 ${phase === 'placed' ? 'cursor-ns-resize' : ''}`}>
           <CandleChart
             candles={visible}
             digits={digits}
-            emas={[
-              { period: 9, color: '#60a5fa' },
-              { period: 21, color: '#f87171' },
-            ]}
+            emas={emas}
             resetKey={round?.key ?? ''}
             overlays={visuals?.overlays}
             markers={markers}
@@ -532,8 +469,80 @@ export default function ReplayView() {
             appendOnly
           />
           {round && !showFuture && (
-            <div className="pointer-events-none absolute right-24 top-3 rounded bg-black/50 px-2 py-0.5 text-[11px] text-slate-400">
-              แท่งอนาคตซ่อนอยู่ {round.candles.length - round.cut} แท่ง
+            <div className="pointer-events-none absolute right-20 top-3 rounded-md bg-panel/90 px-2 py-1 text-xs text-muted shadow">
+              ซ่อนแท่งอนาคตอยู่ {round.candles.length - round.cut} แท่ง
+            </div>
+          )}
+          {round && lastVisible && phase !== 'loading' && phase !== 'reveal' && (
+            <div className="absolute bottom-10 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-line bg-panel/95 p-2 backdrop-blur" style={{ boxShadow: 'var(--shadow-pop)' }}>
+              {phase === 'guess' && (
+                <>
+                  <button
+                    onClick={() => setRound({ ...round, cut: Math.min(round.candles.length - 20, round.cut + 1) })}
+                    className="btn"
+                    title="ดูแท่งถัดไปก่อนตัดสินใจ (→)"
+                  >
+                    แท่งถัดไป
+                    <Icon name="right" size={14} />
+                  </button>
+                  <button onClick={() => choose('long')} className="btn border-bull bg-bull px-5 font-semibold text-white hover:!bg-bull hover:!text-white hover:brightness-110">
+                    BUY
+                  </button>
+                  <button onClick={() => choose('short')} className="btn border-bear bg-bear px-5 font-semibold text-white hover:!bg-bear hover:!text-white hover:brightness-110">
+                    SELL
+                  </button>
+                  <button onClick={() => reveal(true)} className="btn btn-ghost">
+                    ไม่เทรด — เฉลยเลย
+                  </button>
+                </>
+              )}
+              {phase === 'placed' && plan && (
+                <>
+                  <span className="px-2 text-xs text-muted">ลากเส้น SL / TP บนกราฟได้</span>
+                  <button onClick={() => reveal(false)} className="btn btn-primary">
+                    ยืนยันแล้วเฉลย
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPlan(null);
+                      setPhase('guess');
+                    }}
+                    className="btn btn-ghost"
+                  >
+                    ยกเลิก
+                  </button>
+                </>
+              )}
+              {phase === 'done' && (
+                <>
+                  <div className="px-2">
+                    {plan ? (
+                      result ? (
+                        <span className={`text-[15px] font-semibold tabular-nums ${result.r > 0 ? 'text-bull' : 'text-bear'}`}>
+                          {fmtR(result.r)}{' '}
+                          <span className="text-xs font-normal text-muted">
+                            {result.exitReason === 'tp' ? 'ถึง TP' : result.exitReason === 'sl' ? 'โดน SL' : 'ยังไม่จบในช่วงที่เฉลย'}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted">ราคาเปิดกระโดดเลย SL/TP — ไม่ได้เข้า</span>
+                      )
+                    ) : (
+                      <span className="text-xs text-muted">ข้ามข้อนี้</span>
+                    )}
+                    {st && (
+                      <div className="text-xs text-muted">
+                        ท่า {round.strategyName}: {st.direction === 'long' ? 'BUY' : 'SELL'}{' '}
+                        <span className={`font-medium ${st.r > 0 ? 'text-bull' : 'text-bear'}`}>{fmtR(st.r)}</span>
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => void newRound()} className="btn btn-primary">
+                    ข้อต่อไป
+                    <Icon name="right" size={14} />
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>

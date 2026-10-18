@@ -5,6 +5,7 @@ import { fetchCandles } from '../api';
 import { snapTime, toChartTime } from '../chartTime';
 import { fmtR, formatThaiTime } from '../format';
 import { CandleChart } from './CandleChart';
+import { Icon } from './Icon';
 import type { OverlayItem } from './OverlayPrimitive';
 
 /** เทรดที่จะดู (ใช้ทั้งเทรดจาก backtest และ journal) */
@@ -92,7 +93,7 @@ export function TradePreview({ symbol, tf, digits, trade, onClose, onPrev, onNex
         time: start,
         position: long ? 'belowBar' : 'aboveBar',
         shape: long ? 'arrowUp' : 'arrowDown',
-        color: long ? '#22c55e' : '#ef4444',
+        color: long ? '#20a874' : '#e5485f',
         text: long ? 'BUY' : 'SELL',
       },
     ];
@@ -101,7 +102,7 @@ export function TradePreview({ symbol, tf, digits, trade, onClose, onPrev, onNex
         time: exitMarkTime,
         position: long ? 'aboveBar' : 'belowBar',
         shape: 'circle',
-        color: (trade.r ?? 0) >= 0 ? '#22c55e' : '#ef4444',
+        color: (trade.r ?? 0) >= 0 ? '#20a874' : '#e5485f',
         text: trade.r !== null ? fmtR(trade.r) : 'ปิด',
       });
     }
@@ -115,45 +116,45 @@ export function TradePreview({ symbol, tf, digits, trade, onClose, onPrev, onNex
 
   const fmt = (v: number) => v.toFixed(digits);
   const priceLines = [
-    { id: 'entry', price: trade.entry, color: '#cbd5e1', title: `Entry ${fmt(trade.entry)}` },
-    { id: 'sl', price: trade.sl, color: '#ef4444', title: `SL ${fmt(trade.sl)}` },
-    { id: 'tp', price: trade.tp, color: '#22c55e', title: `TP ${fmt(trade.tp)}` },
+    { id: 'entry', price: trade.entry, color: '#8792a6', title: `Entry ${fmt(trade.entry)}` },
+    { id: 'sl', price: trade.sl, color: '#e5485f', title: `SL ${fmt(trade.sl)}` },
+    { id: 'tp', price: trade.tp, color: '#20a874', title: `TP ${fmt(trade.tp)}` },
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-6 backdrop-blur-[2px]" onClick={onClose}>
       <div
-        className="flex h-[80vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-2xl"
+        className="card flex h-[80vh] w-full max-w-5xl flex-col overflow-hidden" style={{ boxShadow: 'var(--shadow-pop)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 border-b border-line px-4 py-2">
+        <div className="flex items-center gap-3 border-b border-line px-5 py-3">
           <span className={`text-sm font-semibold ${trade.direction === 'long' ? 'text-bull' : 'text-bear'}`}>
             {trade.direction === 'long' ? 'BUY' : 'SELL'}
           </span>
-          <span className="text-sm text-white">{trade.title}</span>
-          <span className="truncate text-xs text-slate-400">
+          <span className="text-sm text-fg">{trade.title}</span>
+          <span className="truncate text-xs text-muted">
             {formatThaiTime(trade.entryTime)}
             {trade.subtitle ? ` · ${trade.subtitle}` : ''}
           </span>
           <div className="ml-auto flex items-center gap-1">
             {onPrev && (
-              <button onClick={onPrev} className="rounded px-2 py-0.5 text-slate-400 hover:bg-line hover:text-white" title="เทรดก่อนหน้า (←)">
-                ‹
+              <button onClick={onPrev} className="btn btn-sm btn-ghost" title="เทรดก่อนหน้า (←)">
+                <Icon name="left" size={16} />
               </button>
             )}
             {onNext && (
-              <button onClick={onNext} className="rounded px-2 py-0.5 text-slate-400 hover:bg-line hover:text-white" title="เทรดถัดไป (→)">
-                ›
+              <button onClick={onNext} className="btn btn-sm btn-ghost" title="เทรดถัดไป (→)">
+                <Icon name="right" size={16} />
               </button>
             )}
-            <button onClick={onClose} className="rounded px-2 py-0.5 text-slate-400 hover:bg-line hover:text-white" aria-label="ปิด">
-              ✕
+            <button onClick={onClose} className="btn btn-sm btn-ghost" aria-label="ปิด">
+              <Icon name="close" size={16} />
             </button>
           </div>
         </div>
         <div className="relative min-h-0 flex-1">
           {error ? (
-            <div className="p-4 text-sm text-red-300">โหลดกราฟไม่ได้: {error}</div>
+            <div className="p-4 text-sm text-bad">โหลดกราฟไม่ได้: {error}</div>
           ) : (
             <CandleChart
               candles={candles}

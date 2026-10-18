@@ -47,6 +47,7 @@ export class OverlayPrimitive implements ISeriesPrimitive<Time> {
   private chart: IChartApi | null = null;
   private series: ISeriesApi<SeriesType> | null = null;
   private requestUpdate: (() => void) | null = null;
+  private labelBg = 'rgba(14, 19, 27, 0.82)';
 
   private readonly view: IPrimitivePaneView = {
     zOrder: () => 'bottom',
@@ -63,6 +64,12 @@ export class OverlayPrimitive implements ISeriesPrimitive<Time> {
     this.chart = null;
     this.series = null;
     this.requestUpdate = null;
+  }
+
+  /** พื้นหลังป้าย (เปลี่ยนตามธีม) */
+  setLabelBg(color: string) {
+    this.labelBg = color;
+    this.requestUpdate?.();
   }
 
   setItems(items: OverlayItem[]) {
@@ -82,7 +89,7 @@ export class OverlayPrimitive implements ISeriesPrimitive<Time> {
 
     target.useBitmapCoordinateSpace(({ context: ctx, bitmapSize, horizontalPixelRatio: hr, verticalPixelRatio: vr }) => {
       ctx.save();
-      ctx.font = `${Math.round(11 * vr)}px Inter, "Noto Sans Thai", "Leelawadee UI", sans-serif`;
+      ctx.font = `500 ${Math.round(10.5 * vr)}px 'IBM Plex Sans Thai', 'Leelawadee UI', sans-serif`;
       ctx.textBaseline = 'middle';
 
       const xOf = (t: Time | null, fallback: number) => {
@@ -91,11 +98,20 @@ export class OverlayPrimitive implements ISeriesPrimitive<Time> {
         return x === null ? null : Math.round(x * hr);
       };
 
+      // ป้ายที่วาดแล้ว — ป้ายใหม่ที่ทับของเดิมจะไม่วาด (กันตัวหนังสือซ้อนกันจนอ่านไม่ออก)
+      const placed: { x1: number; y1: number; x2: number; y2: number }[] = [];
       const label = (text: string, x: number, y: number, color: string, align: 'left' | 'right' | 'center') => {
         const tw = ctx.measureText(text).width;
+        const padX = 4 * hr;
+        const hh = 8 * vr;
         const tx = align === 'right' ? x - tw : align === 'center' ? x - tw / 2 : x;
-        ctx.fillStyle = 'rgba(11, 14, 20, 0.75)';
-        ctx.fillRect(tx - 3 * hr, y - 7 * vr, tw + 6 * hr, 14 * vr);
+        const box = { x1: tx - padX, y1: y - hh, x2: tx + tw + padX, y2: y + hh };
+        if (placed.some((b) => box.x1 < b.x2 && box.x2 > b.x1 && box.y1 < b.y2 && box.y2 > b.y1)) return;
+        placed.push(box);
+        ctx.fillStyle = this.labelBg;
+        ctx.beginPath();
+        ctx.roundRect(box.x1, box.y1, box.x2 - box.x1, box.y2 - box.y1, 3 * hr);
+        ctx.fill();
         ctx.fillStyle = color;
         ctx.fillText(text, tx, y);
       };
@@ -110,7 +126,7 @@ export class OverlayPrimitive implements ISeriesPrimitive<Time> {
 
         ctx.strokeStyle = item.stroke;
         ctx.lineWidth = Math.max(1, Math.round((item.lineWidth ?? 1) * hr));
-        ctx.setLineDash(item.dashed ? [6 * hr, 4 * hr] : []);
+        ctx.setLineDash(item.dashed ? [4 * hr, 4 * hr] : []);
 
         if (item.kind === 'box') {
           const yt = series.priceToCoordinate(item.top);
@@ -129,8 +145,8 @@ export class OverlayPrimitive implements ISeriesPrimitive<Time> {
           ctx.stroke();
           if (item.label) {
             const color = item.labelColor ?? item.stroke;
-            if (item.labelPos === 'left') label(item.label, x1 + 4 * hr, y1 + 8 * vr, color, 'left');
-            else label(item.label, x2 - 100 * hr, y1 + h / 2, color, 'right');
+            if (item.labelPos === 'left') label(item.label, x1 + 6 * hr, y1 + 10 * vr, color, 'left');
+            else label(item.label, x2 - 8 * hr, y1 + h / 2, color, 'right');
           }
         } else {
           const y = series.priceToCoordinate(item.price);
@@ -140,7 +156,7 @@ export class OverlayPrimitive implements ISeriesPrimitive<Time> {
           ctx.moveTo(x1, yy);
           ctx.lineTo(x2, yy);
           ctx.stroke();
-          if (item.label) label(item.label, (x1 + x2) / 2, yy - 8 * vr, item.labelColor ?? item.stroke, 'center');
+          if (item.label) label(item.label, (x1 + x2) / 2, yy - 9 * vr, item.labelColor ?? item.stroke, 'center');
         }
       }
       ctx.restore();

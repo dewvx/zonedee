@@ -18,6 +18,7 @@ import {
 import { ema, type Candle } from '@zonedee/core';
 import { fromChartTime, toChartTime } from '../chartTime';
 import { OverlayPrimitive, type OverlayItem } from './OverlayPrimitive';
+import { CHART_PALETTE, FONT, useTheme, type ChartPalette } from '../theme';
 
 export interface EmaSetting {
   period: number;
@@ -70,15 +71,31 @@ export interface ChartPriceLine {
 /** ระยะ (px) จากเส้นที่ถือว่าจับเส้นได้ */
 const DRAG_HIT_PX = 6;
 
+const chartColors = (p: ChartPalette) => ({
+  layout: { background: { type: ColorType.Solid, color: p.bg }, textColor: p.text },
+  grid: { vertLines: { color: p.grid }, horzLines: { color: p.grid } },
+  crosshair: {
+    mode: CrosshairMode.Normal,
+    vertLine: { color: p.crosshair, labelBackgroundColor: p.border },
+    horzLine: { color: p.crosshair, labelBackgroundColor: p.border },
+  },
+  rightPriceScale: { borderColor: p.border },
+});
+
+const candleColors = (p: ChartPalette) => ({
+  upColor: p.bull,
+  downColor: p.bear,
+  borderUpColor: p.bull,
+  borderDownColor: p.bear,
+  wickUpColor: p.bull,
+  wickDownColor: p.bear,
+});
+
 /** จำนวนแท่งที่แสดงตอนเปิด symbol/TF ใหม่ */
 const INITIAL_VISIBLE_BARS = 180;
 /** เหลือแท่งทางซ้ายน้อยกว่านี้ → ขอโหลดเพิ่ม */
 const LOAD_MORE_THRESHOLD = 40;
 
-const BULL = '#22c55e';
-const BEAR = '#ef4444';
-const BULL_OPEN = 'rgba(34, 197, 94, 0.45)';
-const BEAR_OPEN = 'rgba(239, 68, 68, 0.45)';
 
 export function CandleChart({
   candles,
@@ -114,6 +131,10 @@ export function CandleChart({
   const priceLineApisRef = useRef<IPriceLine[]>([]);
   const candlesRef = useRef(candles);
   candlesRef.current = candles;
+  const theme = useTheme();
+  const pal = CHART_PALETTE[theme];
+  const palRef = useRef<ChartPalette>(pal);
+  palRef.current = pal;
 
   // สร้างกราฟครั้งเดียว
   useEffect(() => {
@@ -122,18 +143,9 @@ export function CandleChart({
 
     const chart = createChart(el, {
       autoSize: true,
-      layout: {
-        background: { type: ColorType.Solid, color: '#0b0e14' },
-        textColor: '#8b93a7',
-        fontFamily: "'Inter', 'Noto Sans Thai', 'Leelawadee UI', system-ui, sans-serif",
-      },
-      grid: {
-        vertLines: { color: '#161b25' },
-        horzLines: { color: '#161b25' },
-      },
-      crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: '#232937' },
-      timeScale: { borderColor: '#232937', timeVisible: true, secondsVisible: false, rightOffset: 6 },
+      ...chartColors(palRef.current),
+      layout: { ...chartColors(palRef.current).layout, fontFamily: FONT, fontSize: 11 },
+      timeScale: { borderColor: palRef.current.border, timeVisible: true, secondsVisible: false, rightOffset: 6 },
       localization: {
         // เวลาถูกเลื่อนเป็นเวลาไทยแล้วใน toChartTime → format แบบ UTC ห้ามเลื่อนซ้ำ
         timeFormatter: (t: number) =>
@@ -147,18 +159,12 @@ export function CandleChart({
       },
     });
 
-    candleSeriesRef.current = chart.addSeries(CandlestickSeries, {
-      upColor: BULL,
-      downColor: BEAR,
-      borderUpColor: BULL,
-      borderDownColor: BEAR,
-      wickUpColor: BULL,
-      wickDownColor: BEAR,
-    });
+    candleSeriesRef.current = chart.addSeries(CandlestickSeries, candleColors(palRef.current));
     chartRef.current = chart;
     if (apiRef) apiRef.current = { screenshot: () => chart.takeScreenshot().toDataURL('image/png') };
 
     const overlay = new OverlayPrimitive();
+    overlay.setLabelBg(palRef.current.labelBg);
     candleSeriesRef.current.attachPrimitive(overlay);
     overlayRef.current = overlay;
     markersRef.current = createSeriesMarkers(candleSeriesRef.current, []);
@@ -257,6 +263,16 @@ export function CandleChart({
     };
   }, []);
 
+  // เปลี่ยนธีม → เปลี่ยนสีกราฟ
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.applyOptions(chartColors(pal));
+    chart.timeScale().applyOptions({ borderColor: pal.border });
+    candleSeriesRef.current?.applyOptions(candleColors(pal));
+    overlayRef.current?.setLabelBg(pal.labelBg);
+  }, [pal]);
+
   // อัปเดตแท่งเทียน + EMA
   useEffect(() => {
     const chart = chartRef.current;
@@ -275,7 +291,7 @@ export function CandleChart({
       candles.map((c, i) => {
         const bar = { time: toChartTime(c.time), open: c.open, high: c.high, low: c.low, close: c.close };
         if (lastBarOpen && i === candles.length - 1) {
-          const color = c.close >= c.open ? BULL_OPEN : BEAR_OPEN;
+          const color = c.close >= c.open ? pal.bullOpen : pal.bearOpen;
           return { ...bar, color, borderColor: color, wickColor: color };
         }
         return bar;
@@ -315,7 +331,7 @@ export function CandleChart({
       chart.timeScale().setVisibleRange(keepRange);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- focus ใช้เฉพาะตอน reset
-  }, [candles, digits, emas, resetKey, lastBarOpen]);
+  }, [candles, digits, emas, resetKey, lastBarOpen, pal]);
 
   // ชั้นที่วาดทับ (หลังตั้งข้อมูลแท่งแล้ว เพื่อให้หาพิกัดเวลาได้)
   useEffect(() => {
