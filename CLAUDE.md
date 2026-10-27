@@ -24,16 +24,17 @@ npm run build        # build web
 ```
 packages/core/   ฟังก์ชันล้วน: types, indicators, structure, zones, risk, backtest, strategies
                  ไม่แตะ DB / network / DOM — ใช้ร่วมกันทั้งกราฟและ backtest
-  src/backtest/      engine (simulate), stats, baseline (เทียบเข้าสุ่ม), run (รวมทุกอย่าง)
+  src/backtest/      engine (simulate), stats, baseline (เทียบเข้าสุ่ม), run (รวมทุกอย่าง), grid-search (จูนพารามิเตอร์อัตโนมัติ)
   src/strategies/    ท่าเทรด — 1 ไฟล์ต่อท่า + common.ts (params ร่วม, ltfConfirm) + index.ts (STRATEGIES)
   src/mtf.ts         htfView: แท่ง TF ใหญ่ + ใช้ได้ตั้งแต่แท่ง TF เล็กไหน (กันแอบดูอนาคต)
   src/scan/          scanStock (หุ้นซิ่ง D1), watchMetrics (watchlist ลงทุน), keyLevels (แนวรับต้านแบบง่าย),
-                     rebalance (จัดพอร์ตตามเป้า %)
+                     stock-news (วิเคราะห์ Sentiment ข่าว), rebalance (จัดพอร์ตตามเป้า %)
 apps/server/     Express 5 — API + ดึง/เก็บข้อมูล
-  src/app.ts         routes ทั้งหมด: symbols, candles (before/after), fetch, contract, strategies, backtest,
+  src/app.ts         routes ทั้งหมด: symbols, candles, fetch, contract, strategies, backtest, news,
                      journal, alerts, user-symbols, watchlist, scan
-  src/backtest.ts    โหลดข้อมูลจาก SQLite + M1 แยก SL/TP + spread → รันท่า / เทียบทุกท่า
-  src/backtest-cli.ts npm run backtest
+  src/backtest.ts    โหลดข้อมูลจาก SQLite + M1 แยก SL/TP + spread → รันท่า / เทียบทุกท่า / จูนพารามิเตอร์
+  src/backtest-cli.ts npm run backtest (--tune, --grid)
+  src/news.ts        ดึงข่าว Yahoo Finance + cache 15 นาที + สรุปด้วย Claude / Gemini AI
   src/journal.ts     Journal (ตาราง journal + รูปใน data/journal/)
   src/alerts/        แจ้งเตือน: store (กฎ/เหตุการณ์), engine (ตรวจทุก 30 วิ เมื่อแท่งปิด), line (Messaging API)
                      กฎ 4 แบบ: strategy, price, level (แนวรับต้าน), earnings (วันประกาศงบ)
@@ -77,6 +78,7 @@ docs/backlog.md  สเปกงานและฟีเจอร์ที่ว
 5. **ระยะห่าง/ความกว้างโซนวัดเป็น × ATR** เพื่อให้ใช้ได้ทุกตลาด
 6. **core ต้องมีเทสต์** — ทุก detector มี fixture ที่ทำมือ (รู้คำตอบแน่นอน) + เทสต์ no-look-ahead
 7. **ทำทีละ phase** ตาม `docs/roadmap.md` แต่ละ phase ต้องรันดูผลได้ แล้วติ๊กใน roadmap
+8. **Git & Branching**: ห้าม push ขึ้น branch `main` โดยตรงเด็ดขาด เมื่อเริ่มงานใหม่ให้แตก branch แยกออกมาเสมอ (เช่น `feature/<task-name>`) และ push ขึ้น branch นั้นเพื่อให้ผู้ใช้ตรวจสอบและ merge เองทีหลัง
 
 ## สไตล์โค้ด
 

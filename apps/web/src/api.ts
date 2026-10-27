@@ -374,8 +374,11 @@ export const fetchFundamentals = (symbol: string) =>
 export const fetchNews = (symbol: string, force = false) =>
   request<StockNewsSummary>(`/api/news?symbol=${encodeURIComponent(symbol)}${force ? '&force=true' : ''}`);
 
-export const summarizeNewsWithAi = (symbol: string) =>
-  postJson<{ symbol: string; aiSummary: string }>('/api/news/summarize', { symbol });
+export const summarizeNewsWithAi = (symbol: string, provider?: 'gemini' | 'claude') =>
+  postJson<{ symbol: string; aiSummary: string; provider: 'gemini' | 'claude' }>('/api/news/summarize', {
+    symbol,
+    provider,
+  });
 
 export interface ScanSource {
   id: string;

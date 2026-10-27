@@ -624,9 +624,9 @@ export function createApp(deps: AppDeps) {
     }
   });
 
-  /** POST /api/news/summarize — เรียก AI (Gemini) สรุปข่าวเป็นภาษาไทย */
+  /** POST /api/news/summarize — เรียก AI (Gemini / Claude) สรุปข่าวเป็นภาษาไทย */
   app.post('/api/news/summarize', async (req, res) => {
-    const body = (req.body ?? {}) as { symbol?: string };
+    const body = (req.body ?? {}) as { symbol?: string; provider?: 'gemini' | 'claude' };
     const symbol = String(body.symbol ?? '').toUpperCase();
     if (!symbol) {
       res.status(400).json({ error: 'ต้องระบุ symbol' });
@@ -637,8 +637,8 @@ export function createApp(deps: AppDeps) {
       return;
     }
     try {
-      const aiSummary = await news.summarizeWithAi(symbol);
-      res.json({ symbol, aiSummary });
+      const { aiSummary, provider } = await news.summarizeWithAi(symbol, body.provider);
+      res.json({ symbol, aiSummary, provider });
     } catch (err) {
       fail(res, err, 400);
     }

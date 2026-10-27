@@ -21,7 +21,9 @@ export interface StockNewsSummary {
   sentimentScore: number;
   headlineSummary: string;
   aiSummary?: string | null;
+  aiProvider?: 'gemini' | 'claude' | null;
   hasAiKey?: boolean;
+  availableProviders?: ('gemini' | 'claude')[];
 }
 
 const POSITIVE_PATTERNS: { regex: RegExp; label: string }[] = [
@@ -85,6 +87,8 @@ export function summarizeNewsItems(
   rawItems: Omit<StockNewsItem, 'sentiment' | 'sentimentScore' | 'highlightKeywords'>[],
   aiSummary?: string | null,
   hasAiKey = false,
+  availableProviders: ('gemini' | 'claude')[] = [],
+  aiProvider: 'gemini' | 'claude' | null = null,
 ): StockNewsSummary {
   const items: StockNewsItem[] = rawItems.map((item) => {
     const { sentiment, score, keywords } = classifyNewsSentiment(item.title);
@@ -136,6 +140,8 @@ export function summarizeNewsItems(
     sentimentScore,
     headlineSummary,
     aiSummary: aiSummary ?? null,
+    aiProvider: aiProvider ?? null,
     hasAiKey,
+    availableProviders,
   };
 }

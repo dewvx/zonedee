@@ -55,7 +55,7 @@ export async function fetchYahooNews(symbol: string, count = 8): Promise<StockNe
 }
 
 /**
- * จัดการ Cache ข่าวใน SQLite และเชื่อมต่อ Gemini AI สำหรับสรุปข่าว
+ * จัดการ Cache ข่าวใน SQLite และเชื่อมต่อ Gemini / Claude AI สำหรับสรุปข่าว
  */
 export class NewsCache {
   private db: DatabaseSync;
@@ -72,22 +72,39 @@ export class NewsCache {
         symbol TEXT PRIMARY KEY,
         data TEXT NOT NULL,
         ai_summary TEXT,
+        ai_provider TEXT,
         fetched_at INTEGER NOT NULL
       );
     `);
+    // ป้องกันกรณีตารางเดิมยังไม่มีคอลัมน์ ai_provider
+    try {
+      this.db.exec('ALTER TABLE news_cache ADD COLUMN ai_provider TEXT');
+    } catch {
+      /* คอลัมน์มีอยู่แล้ว */
+    }
+  }
+
+  getAvailableProviders(): ('gemini' | 'claude')[] {
+    const providers: ('gemini' | 'claude')[] = [];
+    if (process.env.GEMINI_API_KEY) providers.push('gemini');
+    if (process.env.ANTHROPIC_API_KEY) providers.push('claude');
+    return providers;
   }
 
   get(symbol: string): StockNewsSummary | null {
     const row = this.db
-      .prepare('SELECT data, ai_summary, fetched_at FROM news_cache WHERE symbol = ?')
+      .prepare('SELECT data, ai_summary, ai_provider, fetched_at FROM news_cache WHERE symbol = ?')
       .get(symbol.toUpperCase()) as
-      | { data: string; ai_summary: string | null; fetched_at: number }
+      | { data: string; ai_summary: string | null; ai_provider: string | null; fetched_at: number }
       | undefined;
     if (!row) return null;
     try {
       const summary = JSON.parse(row.data) as StockNewsSummary;
+      const providers = this.getAvailableProviders();
       summary.aiSummary = row.ai_summary;
-      summary.hasAiKey = Boolean(process.env.GEMINI_API_KEY);
+      summary.aiProvider = (row.ai_provider as 'gemini' | 'claude') ?? null;
+      summary.hasAiKey = providers.length > 0;
+      summary.availableProviders = providers;
       return summary;
     } catch {
       return null;
@@ -96,17 +113,20 @@ export class NewsCache {
 
   async getOrFetch(symbol: string, force = false): Promise<StockNewsSummary> {
     const sUpper = symbol.toUpperCase();
+    const providers = this.getAvailableProviders();
     const existing = this.db
-      .prepare('SELECT data, ai_summary, fetched_at FROM news_cache WHERE symbol = ?')
+      .prepare('SELECT data, ai_summary, ai_provider, fetched_at FROM news_cache WHERE symbol = ?')
       .get(sUpper) as
-      | { data: string; ai_summary: string | null; fetched_at: number }
+      | { data: string; ai_summary: string | null; ai_provider: string | null; fetched_at: number }
       | undefined;
 
     if (!force && existing && this.now() - existing.fetched_at < NEWS_TTL_MS) {
       try {
         const summary = JSON.parse(existing.data) as StockNewsSummary;
         summary.aiSummary = existing.ai_summary;
-        summary.hasAiKey = Boolean(process.env.GEMINI_API_KEY);
+        summary.aiProvider = (existing.ai_provider as 'gemini' | 'claude') ?? null;
+        summary.hasAiKey = providers.length > 0;
+        summary.availableProviders = providers;
         return summary;
       } catch {
         // ignore and refetch
@@ -114,21 +134,35 @@ export class NewsCache {
     }
 
     const items = await fetchYahooNews(sUpper);
-    const hasAiKey = Boolean(process.env.GEMINI_API_KEY);
-    const summary = summarizeNewsItems(sUpper, items, existing?.ai_summary, hasAiKey);
+    const summary = summarizeNewsItems(
+      sUpper,
+      items,
+      existing?.ai_summary,
+      providers.length > 0,
+      providers,
+      (existing?.ai_provider as 'gemini' | 'claude') ?? null,
+    );
 
     const put = this.db.prepare(
-      'INSERT INTO news_cache (symbol, data, ai_summary, fetched_at) VALUES (?, ?, ?, ?) ON CONFLICT(symbol) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at',
+      'INSERT INTO news_cache (symbol, data, ai_summary, ai_provider, fetched_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(symbol) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at',
     );
-    put.run(sUpper, JSON.stringify(summary), existing?.ai_summary ?? null, this.now());
+    put.run(sUpper, JSON.stringify(summary), existing?.ai_summary ?? null, existing?.ai_provider ?? null, this.now());
 
     return summary;
   }
 
-  async summarizeWithAi(symbol: string): Promise<string> {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('ยังไม่ได้กำหนด GEMINI_API_KEY ในไฟล์ .env');
+  async summarizeWithAi(
+    symbol: string,
+    requestedProvider?: 'gemini' | 'claude',
+  ): Promise<{ aiSummary: string; provider: 'gemini' | 'claude' }> {
+    const providers = this.getAvailableProviders();
+    if (providers.length === 0) {
+      throw new Error('ยังไม่ได้กำหนด GEMINI_API_KEY หรือ ANTHROPIC_API_KEY ในไฟล์ .env');
+    }
+
+    let provider: 'gemini' | 'claude' = requestedProvider ?? (providers.includes('claude') ? 'claude' : 'gemini');
+    if (requestedProvider && !providers.includes(requestedProvider)) {
+      throw new Error(`ยังไม่ได้กำหนด API Key สำหรับ ${requestedProvider === 'claude' ? 'Claude (ANTHROPIC_API_KEY)' : 'Gemini (GEMINI_API_KEY)'}`);
     }
 
     const summary = await this.getOrFetch(symbol, false);
@@ -157,28 +191,61 @@ ${newsListText}
 
 ตอบเฉพาะข้อความสรุปภาษาไทย ไม่ต้องมีคำเกริ่นนำอื่น`;
 
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 600 },
-        }),
-      },
-    );
+    let aiText = '';
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`Gemini API Error (${res.status}): ${errText.slice(0, 200)}`);
+    if (provider === 'claude') {
+      const apiKey = process.env.ANTHROPIC_API_KEY!;
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-haiku-20241022',
+          max_tokens: 600,
+          temperature: 0.3,
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Claude API Error (${res.status}): ${errText.slice(0, 200)}`);
+      }
+
+      const json = (await res.json()) as any;
+      aiText = json?.content?.[0]?.text?.trim() ?? '';
+    } else {
+      const apiKey = process.env.GEMINI_API_KEY!;
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 600 },
+          }),
+        },
+      );
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Gemini API Error (${res.status}): ${errText.slice(0, 200)}`);
+      }
+
+      const json = (await res.json()) as any;
+      aiText = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
     }
 
-    const json = (await res.json()) as any;
-    const aiText = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    if (!aiText) throw new Error('ไม่ได้รับข้อความตอบกลับจาก Gemini API');
+    if (!aiText) throw new Error(`ไม่ได้รับข้อความตอบกลับจาก ${provider === 'claude' ? 'Claude' : 'Gemini'} API`);
 
-    this.db.prepare('UPDATE news_cache SET ai_summary = ? WHERE symbol = ?').run(aiText, symbol.toUpperCase());
-    return aiText;
+    this.db
+      .prepare('UPDATE news_cache SET ai_summary = ?, ai_provider = ? WHERE symbol = ?')
+      .run(aiText, provider, symbol.toUpperCase());
+
+    return { aiSummary: aiText, provider };
   }
 }

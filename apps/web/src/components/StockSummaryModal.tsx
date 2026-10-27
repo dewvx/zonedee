@@ -48,6 +48,7 @@ export function StockSummaryModal({
   const [newsError, setNewsError] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<'gemini' | 'claude'>('claude');
 
   // ดึงข่าวล่าสุดเมื่อเปิด modal
   useEffect(() => {
@@ -56,7 +57,13 @@ export function StockSummaryModal({
       setNewsError(null);
       setAiError(null);
       fetchNews(symbol)
-        .then((res) => setNews(res))
+        .then((res) => {
+          setNews(res);
+          if (res.availableProviders?.length) {
+            const p = res.availableProviders.includes('claude') ? 'claude' : res.availableProviders[0];
+            if (p) setSelectedProvider(p);
+          }
+        })
         .catch((err) => setNewsError((err as Error).message))
         .finally(() => setNewsLoading(false));
     }
@@ -71,12 +78,21 @@ export function StockSummaryModal({
       .finally(() => setNewsLoading(false));
   };
 
-  const handleSummarizeAi = async () => {
+  const handleSummarizeAi = async (prov?: 'gemini' | 'claude') => {
+    const targetProv = prov ?? selectedProvider;
     setAiLoading(true);
     setAiError(null);
     try {
-      const res = await summarizeNewsWithAi(symbol);
-      setNews((prev) => (prev ? { ...prev, aiSummary: res.aiSummary } : null));
+      const res = await summarizeNewsWithAi(symbol, targetProv);
+      setNews((prev) =>
+        prev
+          ? {
+              ...prev,
+              aiSummary: res.aiSummary,
+              aiProvider: res.provider,
+            }
+          : null,
+      );
     } catch (err) {
       setAiError((err as Error).message);
     } finally {
@@ -237,20 +253,51 @@ export function StockSummaryModal({
 
             {/* AI Summary Box */}
             {news?.aiSummary ? (
-              <div className="rounded-xl border border-accent/35 bg-accent/5 p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-accent">
-                    <Icon name="sparkles" size={14} />
-                    <span>บทวิเคราะห์ข่าวเชิงลึกโดย AI (ภาษาไทย)</span>
+              <div className="rounded-xl border border-accent/35 bg-accent/5 p-4 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-accent/20 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Icon name="sparkles" size={14} className="text-accent" />
+                    <span className="text-xs font-semibold text-accent">บทวิเคราะห์ข่าวเชิงลึกโดย AI</span>
+                    <span className="badge bg-panel text-[10px] text-muted border border-line">
+                      {news.aiProvider === 'claude' ? 'Claude 3.5' : 'Gemini 1.5'}
+                    </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleSummarizeAi}
-                    disabled={aiLoading}
-                    className="text-[11px] text-muted hover:text-accent hover:underline disabled:opacity-40"
-                  >
-                    {aiLoading ? 'กำลังวิเคราะห์ใหม่…' : 'วิเคราะห์ใหม่'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {news.availableProviders && news.availableProviders.length > 1 && (
+                      <div className="seg text-[11px]" role="group">
+                        <button
+                          type="button"
+                          aria-pressed={selectedProvider === 'claude'}
+                          onClick={() => {
+                            setSelectedProvider('claude');
+                            void handleSummarizeAi('claude');
+                          }}
+                          disabled={aiLoading}
+                        >
+                          Claude
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={selectedProvider === 'gemini'}
+                          onClick={() => {
+                            setSelectedProvider('gemini');
+                            void handleSummarizeAi('gemini');
+                          }}
+                          disabled={aiLoading}
+                        >
+                          Gemini
+                        </button>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleSummarizeAi()}
+                      disabled={aiLoading}
+                      className="text-[11px] text-muted hover:text-accent hover:underline disabled:opacity-40"
+                    >
+                      {aiLoading ? 'กำลังวิเคราะห์ใหม่…' : 'วิเคราะห์ใหม่'}
+                    </button>
+                  </div>
                 </div>
                 <div className="text-xs leading-relaxed text-fg whitespace-pre-line">
                   {news.aiSummary}
@@ -263,19 +310,43 @@ export function StockSummaryModal({
                   <span>
                     {news?.hasAiKey
                       ? 'คลิกปุ่มด้านขวาเพื่อให้ AI ช่วยอ่านและสรุปข่าวเป็นภาษาไทย'
-                      : 'ระบุ GEMINI_API_KEY ในไฟล์ .env เพื่อเปิดใช้ปุ่มสรุปข่าวด้วย AI'}
+                      : 'ระบุ ANTHROPIC_API_KEY หรือ GEMINI_API_KEY ใน .env เพื่อเปิดใช้สรุปข่าวด้วย AI'}
                   </span>
                 </div>
                 {news?.hasAiKey && (
-                  <button
-                    type="button"
-                    onClick={handleSummarizeAi}
-                    disabled={aiLoading || newsLoading || !news.items?.length}
-                    className="btn btn-sm btn-primary"
-                  >
-                    <Icon name="sparkles" size={12} />
-                    {aiLoading ? 'AI กำลังอ่านและสรุป…' : 'ให้ AI สรุปเป็นภาษาไทย'}
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {news.availableProviders && news.availableProviders.length > 1 && (
+                      <div className="seg text-[11px]" role="group">
+                        <button
+                          type="button"
+                          aria-pressed={selectedProvider === 'claude'}
+                          onClick={() => setSelectedProvider('claude')}
+                          disabled={aiLoading}
+                        >
+                          Claude
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={selectedProvider === 'gemini'}
+                          onClick={() => setSelectedProvider('gemini')}
+                          disabled={aiLoading}
+                        >
+                          Gemini
+                        </button>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleSummarizeAi()}
+                      disabled={aiLoading || newsLoading || !news.items?.length}
+                      className="btn btn-sm btn-primary"
+                    >
+                      <Icon name="sparkles" size={12} />
+                      {aiLoading
+                        ? 'AI กำลังอ่านและสรุป…'
+                        : `สรุปด้วย ${selectedProvider === 'claude' ? 'Claude' : 'Gemini'}`}
+                    </button>
+                  </div>
                 )}
               </div>
             )}
