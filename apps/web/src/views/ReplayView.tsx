@@ -13,6 +13,7 @@ import {
 } from '@zonedee/core';
 import { fetchCandles, fetchCandlesAfter, fetchStrategies, fetchSymbols, runBacktest, type StrategyInfo, type SymbolSummary } from '../api';
 import { CandleChart, type ChartPriceLine } from '../components/CandleChart';
+import { HotkeyHelpModal } from '../components/HotkeyHelpModal';
 import { toChartTime } from '../chartTime';
 import { fmtPct, fmtR, formatThaiTime } from '../format';
 import { DEFAULT_LAYERS, buildOverlays } from '../overlays';
@@ -116,6 +117,7 @@ export default function ReplayView() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [result, setResult] = useState<Trade | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hotkeyHelpOpen, setHotkeyHelpOpen] = useState(false);
   // จุดสัญญาณของท่า (cache ต่อ symbol/tf/ท่า)
   const signalCache = useRef(new Map<string, { trades: Trade[]; name: string }>());
   const rng = useRef(createRng(Date.now() >>> 0));
@@ -254,24 +256,58 @@ export default function ReplayView() {
     }, 25);
   };
 
-  // ปุ่มลัด: → แท่งถัดไป · B ซื้อ · S ขาย · Enter เฉลย · N ข้อต่อไป
+  // ปุ่มลัด: Space/→ แท่งถัดไป · B ซื้อ · S ขาย · N/X ไม่เทรด · Enter ยืนยัน · Esc ยกเลิก · R สุ่มใหม่ · ? คีย์ลัด
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'SELECT') return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
       const k = e.key.toLowerCase();
-      if (phase === 'guess' && k === 'arrowright' && round && round.cut < round.candles.length - 20)
-        setRound({ ...round, cut: round.cut + 1 });
-      else if (phase === 'guess' && k === 'b') choose('long');
-      else if (phase === 'guess' && k === 's') choose('short');
-      else if (phase === 'placed' && k === 'enter') reveal(false);
-      else if (phase === 'placed' && k === 'escape') {
-        setPlan(null);
-        setPhase('guess');
-      } else if ((phase === 'done' || phase === 'idle') && k === 'n') void newRound();
+      const isSpace = e.key === ' ' || e.code === 'Space';
+
+      if (e.key === '?') {
+        e.preventDefault();
+        setHotkeyHelpOpen((v) => !v);
+        return;
+      }
+
+      if (phase === 'guess') {
+        if ((isSpace || k === 'arrowright') && round && round.cut < round.candles.length - 20) {
+          e.preventDefault();
+          setRound({ ...round, cut: round.cut + 1 });
+        } else if (k === 'b') {
+          e.preventDefault();
+          choose('long');
+        } else if (k === 's') {
+          e.preventDefault();
+          choose('short');
+        } else if (k === 'n' || k === 'x') {
+          e.preventDefault();
+          reveal(true);
+        } else if (k === 'r') {
+          e.preventDefault();
+          void newRound();
+        }
+      } else if (phase === 'placed') {
+        if (k === 'enter' || isSpace) {
+          e.preventDefault();
+          reveal(false);
+        } else if (k === 'escape') {
+          e.preventDefault();
+          setPlan(null);
+          setPhase('guess');
+        }
+      } else if (phase === 'done' || phase === 'idle') {
+        if (k === 'n' || k === 'r' || isSpace) {
+          e.preventDefault();
+          void newRound();
+        }
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  });
+  }, [phase, round, plan, newRound]);
 
   const priceLines = useMemo<ChartPriceLine[]>(() => {
     const lines: ChartPriceLine[] = [];
@@ -442,18 +478,43 @@ export default function ReplayView() {
       </SidePanel>
 
       <main className="relative flex min-w-0 flex-1 flex-col">
-        <div className="flex min-h-14 items-center gap-3 border-b border-line bg-panel px-5">
-          {round && lastVisible ? (
-            <>
-              <span className="text-[15px] font-semibold text-fg">
-                {settings.symbol} <span className="font-normal text-muted">{settings.tf}</span>
-              </span>
-              <span className="text-xs text-muted">ตอนนี้ {formatThaiTime(lastVisible.time + TIMEFRAME_MS[settings.tf])}</span>
-              {round.strategyName && phase !== 'done' && <span className="badge bg-accent/12 text-accent">จุดที่ {round.strategyName} เกิดสัญญาณ</span>}
-            </>
-          ) : (
-            <span className="text-[13px] text-muted">เลือก symbol / TF แล้วกด "เริ่มฝึก"</span>
-          )}
+        <div className="flex min-h-14 items-center justify-between gap-3 border-b border-line bg-panel px-5">
+          <div className="flex items-center gap-3">
+            {round && lastVisible ? (
+              <>
+                <span className="text-[15px] font-semibold text-fg">
+                  {settings.symbol} <span className="font-normal text-muted">{settings.tf}</span>
+                </span>
+                <span className="text-xs text-muted">ตอนนี้ {formatThaiTime(lastVisible.time + TIMEFRAME_MS[settings.tf])}</span>
+                {round.strategyName && phase !== 'done' && <span className="badge bg-accent/12 text-accent">จุดที่ {round.strategyName} เกิดสัญญาณ</span>}
+              </>
+            ) : (
+              <span className="text-[13px] text-muted">เลือก symbol / TF แล้วกด "เริ่มฝึก"</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void newRound()}
+              disabled={phase === 'loading'}
+              className="btn text-xs"
+              title="สุ่มจุดเริ่มฝึกใหม่ (กด R)"
+            >
+              <Icon name="refresh" size={13} className={phase === 'loading' ? 'animate-spin' : ''} />
+              <span>สุ่มใหม่</span>
+              <kbd className="rounded bg-field px-1 py-0.2 font-mono text-[10px] text-faint">R</kbd>
+            </button>
+            <button
+              type="button"
+              onClick={() => setHotkeyHelpOpen(true)}
+              className="chip text-xs text-muted hover:text-fg"
+              title="ดูรายการคีย์ลัดทั้งหมด (กด ?)"
+            >
+              <Icon name="keyboard" size={13} />
+              <span className="hidden sm:inline">คีย์ลัด</span>
+              <kbd className="rounded bg-field px-1 py-0.2 font-mono text-[10px] text-faint">?</kbd>
+            </button>
+          </div>
         </div>
         <div className={`relative min-h-0 flex-1 ${phase === 'placed' ? 'cursor-ns-resize' : ''}`}>
           <CandleChart
@@ -480,27 +541,44 @@ export default function ReplayView() {
                   <button
                     onClick={() => setRound({ ...round, cut: Math.min(round.candles.length - 20, round.cut + 1) })}
                     className="btn"
-                    title="ดูแท่งถัดไปก่อนตัดสินใจ (→)"
+                    title="เดินแท่งถัดไปทีละ 1 แท่ง (กด Space หรือ →)"
                   >
-                    แท่งถัดไป
+                    <span>แท่งถัดไป</span>
+                    <kbd className="rounded bg-field px-1 py-0.2 font-mono text-[10px] text-faint">Space</kbd>
                     <Icon name="right" size={14} />
                   </button>
-                  <button onClick={() => choose('long')} className="btn border-bull bg-bull px-5 font-semibold text-white hover:!bg-bull hover:!text-white hover:brightness-110">
-                    BUY
+                  <button
+                    onClick={() => choose('long')}
+                    className="btn border-bull bg-bull px-4 font-semibold text-white hover:!bg-bull hover:!text-white hover:brightness-110"
+                    title="วางแผน BUY (กด B)"
+                  >
+                    <span>BUY</span>
+                    <kbd className="rounded bg-black/25 px-1 py-0.2 font-mono text-[10px] text-white/90">B</kbd>
                   </button>
-                  <button onClick={() => choose('short')} className="btn border-bear bg-bear px-5 font-semibold text-white hover:!bg-bear hover:!text-white hover:brightness-110">
-                    SELL
+                  <button
+                    onClick={() => choose('short')}
+                    className="btn border-bear bg-bear px-4 font-semibold text-white hover:!bg-bear hover:!text-white hover:brightness-110"
+                    title="วางแผน SELL (กด S)"
+                  >
+                    <span>SELL</span>
+                    <kbd className="rounded bg-black/25 px-1 py-0.2 font-mono text-[10px] text-white/90">S</kbd>
                   </button>
-                  <button onClick={() => reveal(true)} className="btn btn-ghost">
-                    ไม่เทรด — เฉลยเลย
+                  <button
+                    onClick={() => reveal(true)}
+                    className="btn btn-ghost"
+                    title="ไม่เทรด — ดูเฉลยทันที (กด N หรือ X)"
+                  >
+                    <span>ไม่เทรด</span>
+                    <kbd className="rounded bg-field px-1 py-0.2 font-mono text-[10px] text-faint">N/X</kbd>
                   </button>
                 </>
               )}
               {phase === 'placed' && plan && (
                 <>
                   <span className="px-2 text-xs text-muted">ลากเส้น SL / TP บนกราฟได้</span>
-                  <button onClick={() => reveal(false)} className="btn btn-primary">
-                    ยืนยันแล้วเฉลย
+                  <button onClick={() => reveal(false)} className="btn btn-primary" title="ยืนยันแล้วเฉลย (กด Enter หรือ Space)">
+                    <span>ยืนยันแล้วเฉลย</span>
+                    <kbd className="rounded bg-black/20 px-1 py-0.2 font-mono text-[10px] text-white">Enter</kbd>
                   </button>
                   <button
                     onClick={() => {
@@ -508,8 +586,10 @@ export default function ReplayView() {
                       setPhase('guess');
                     }}
                     className="btn btn-ghost"
+                    title="ยกเลิกการวางออเดอร์ (กด Esc)"
                   >
-                    ยกเลิก
+                    <span>ยกเลิก</span>
+                    <kbd className="rounded bg-field px-1 py-0.2 font-mono text-[10px] text-faint">Esc</kbd>
                   </button>
                 </>
               )}
@@ -537,8 +617,9 @@ export default function ReplayView() {
                       </div>
                     )}
                   </div>
-                  <button onClick={() => void newRound()} className="btn btn-primary">
-                    ข้อต่อไป
+                  <button onClick={() => void newRound()} className="btn btn-primary" title="ข้อต่อไป / สุ่มใหม่ (กด N หรือ Space)">
+                    <span>ข้อต่อไป</span>
+                    <kbd className="rounded bg-black/20 px-1 py-0.2 font-mono text-[10px] text-white">Space</kbd>
                     <Icon name="right" size={14} />
                   </button>
                 </>
@@ -547,6 +628,8 @@ export default function ReplayView() {
           )}
         </div>
       </main>
+
+      <HotkeyHelpModal isOpen={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
     </div>
   );
 }

@@ -33,6 +33,7 @@
 - [x] **งบการเงินย่อจาก Yahoo Finance**: ดึง P/E, Forward P/E, PEG, P/B, ROE, รายได้รวม, รายได้โต YoY %, อัตรากำไรสุทธิ %, หนี้สิน (Debt/Equity), และเงินปันผล พร้อม Cache 24 ชม. ใน SQLite (`FundamentalsCache`)
 
 - [x] **แท่ง D1 แบบตัดวันตอน NY close (D9)** ให้ตรงกับ MT5 (`TASK-01`): สลับโหมด UTC (00:00) และ NY Close (17:00 NY / ตี 4-5 ไทย) บนกราฟ, คำนวณ DST/EST แม่นยำ, ตัดแท่งปลอมวันอาทิตย์ออกรวมเข้ากับวันจันทร์ตรงกับ MT5
+- [x] **Hotkeys / คีย์ลัดบนหน้ากราฟและโหมด Replay** (`TASK-02`): สลับ TF ด้วยตัวเลข 1, 5, 15, 30, 4, 6 หรือ H/D/W, เปิด/ปิด EMA (E), โครงสร้างราคา (L), Replay เดินแท่ง (Space/→), BUY (B), SELL (S), ข้าม (N/X), สุ่มใหม่ (R), หน้าต่างคู่มือคีย์ลัด HotkeyHelpModal (?)
 - จูนค่า D1 (swing) / D2 / D3 / D11 / D12 ด้วย backtest บนข้อมูล MT5 จริงหลายเดือน แล้วตัดสินในตาราง rules.md (`TASK-05`)
 - ท่า 4 AMD (`TASK-04`), ท่า 7 Trendline, ท่า 8 Power x Braron (รอนิยามเพิ่ม)
 - walk-forward / ทดสอบหลายคู่เงินพร้อมกัน (`TASK-07`), ต้นทุน swap ข้ามคืน (`TASK-06`)

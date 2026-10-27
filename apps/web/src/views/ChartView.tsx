@@ -31,6 +31,7 @@ import { LayerBar } from '../components/LayerBar';
 import { ZonePanel } from '../components/ZonePanel';
 import { SymbolSearchModal } from '../components/SymbolSearchModal';
 import { StockSummaryModal } from '../components/StockSummaryModal';
+import { HotkeyHelpModal } from '../components/HotkeyHelpModal';
 import { BO_HTF, buildOverlays, type LayerToggles } from '../overlays';
 import { formatThaiTime } from '../format';
 import { Icon } from '../components/Icon';
@@ -43,6 +44,18 @@ const EMA_PERIODS = [9, 21];
 const PAGE_SIZE = 1000;
 /** อัปเดตอัตโนมัติทุกกี่ ms */
 const AUTO_UPDATE_MS = { forex: 60_000, 'us-stock': 5 * 60_000 } as const;
+
+const TF_HOTKEY_HINT: Record<string, string> = {
+  M1: '1',
+  M5: '5',
+  M10: '10',
+  M15: '15 / 2',
+  M30: '30 / 3',
+  H1: '6 / H',
+  H4: '4',
+  D1: 'D',
+  W1: 'W',
+};
 
 const SOURCE_LABEL: Record<CandlesResponse['source'], string> = {
   dukascopy: 'Dukascopy',
@@ -102,6 +115,19 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
   const [now, setNow] = useState(() => Date.now());
   const [searchOpen, setSearchOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [hotkeyHelpOpen, setHotkeyHelpOpen] = useState(false);
+  const [showLayerBar, setShowLayerBar] = useState(true);
+  const [tfToast, setTfToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  const tfBufferRef = useRef('');
+  const tfTimerRef = useRef<number | null>(null);
+
+  const showToast = useCallback((text: string) => {
+    setTfToast(text);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setTfToast(null), 1200);
+  }, []);
+
   const [summaryData, setSummaryData] = useState<{
     fundamentals: FundamentalData | null;
     summary: StockSummaryResult | null;
@@ -116,20 +142,6 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
       console.warn('fetchFundamentals error:', err);
     }
   }, [symbol]);
-
-  // คีย์ลัด '/' หรือ 'Ctrl+K' เปิดกล่องค้นหา symbol
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) {
-        e.preventDefault();
-        setSearchOpen(true);
-      }
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, []);
 
   const key = `${symbol}:${tf}:${tf === 'D1' ? d1Cutoff : ''}`;
   const keyRef = useRef(key);
@@ -156,6 +168,166 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
   const info = symbols.find((s) => s.symbol === symbol);
   const timeframes = info?.timeframes ?? [];
   const tfReady = !!info && info.timeframes.includes(tf);
+
+  // ระบบคีย์ลัดบนหน้ากราฟ (Timeframes, EMA, LayerBar, ค้นหา, คู่มือ)
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement)?.isContentEditable) return;
+
+      // คีย์ลัด '/' หรือ 'Ctrl+K' เปิดกล่องค้นหา symbol
+      if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) {
+        e.preventDefault();
+        setSearchOpen(true);
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      const k = e.key.toLowerCase();
+
+      // กด '?' เปิด/ปิด คู่มือคีย์ลัด
+      if (e.key === '?') {
+        e.preventDefault();
+        setHotkeyHelpOpen((v) => !v);
+        return;
+      }
+
+      // กด 'E' สลับเปิด/ปิด EMA 9/21
+      if (k === 'e') {
+        e.preventDefault();
+        update({ showEma: !showEma });
+        showToast(!showEma ? 'เปิด EMA 9/21' : 'ปิด EMA 9/21');
+        return;
+      }
+
+      // กด 'L' สลับเปิด/ปิด แถบโครงสร้างราคา (LayerBar)
+      if (k === 'l') {
+        e.preventDefault();
+        setShowLayerBar((v) => !v);
+        showToast(!showLayerBar ? 'เปิด แถบโครงสร้างราคา' : 'ปิด แถบโครงสร้างราคา');
+        return;
+      }
+
+      // กด 'D' สลับไป D1
+      if (k === 'd') {
+        e.preventDefault();
+        if (timeframes.includes('D1')) {
+          update({ tf: 'D1' });
+          showToast('Timeframe: D1');
+        }
+        return;
+      }
+
+      // กด 'W' สลับไป W1
+      if (k === 'w') {
+        e.preventDefault();
+        if (timeframes.includes('W1')) {
+          update({ tf: 'W1' });
+          showToast('Timeframe: W1');
+        }
+        return;
+      }
+
+      // กด 'H' หรือ '6' สลับไป H1
+      if (k === 'h') {
+        e.preventDefault();
+        if (timeframes.includes('H1')) {
+          update({ tf: 'H1' });
+          showToast('Timeframe: H1');
+        }
+        return;
+      }
+
+      // ตัวเลขสำหรับ Timeframe: 1, 5, 15, 30, 4, 6
+      if (/^[0-9]$/.test(e.key)) {
+        e.preventDefault();
+        const next = tfBufferRef.current + e.key;
+        tfBufferRef.current = next;
+        if (tfTimerRef.current) clearTimeout(tfTimerRef.current);
+
+        // ตรวจคู่ตัวเลข
+        if (next === '15') {
+          tfBufferRef.current = '';
+          if (timeframes.includes('M15')) {
+            update({ tf: 'M15' });
+            showToast('Timeframe: M15');
+          }
+          return;
+        }
+        if (next === '30') {
+          tfBufferRef.current = '';
+          if (timeframes.includes('M30')) {
+            update({ tf: 'M30' });
+            showToast('Timeframe: M30');
+          }
+          return;
+        }
+        if (next === '10') {
+          tfBufferRef.current = '';
+          if (timeframes.includes('M10')) {
+            update({ tf: 'M10' });
+            showToast('Timeframe: M10');
+          }
+          return;
+        }
+
+        // ตัวเลขเดี่ยวที่เปลี่ยนทันที
+        if (next === '5') {
+          tfBufferRef.current = '';
+          if (timeframes.includes('M5')) {
+            update({ tf: 'M5' });
+            showToast('Timeframe: M5');
+          }
+          return;
+        }
+        if (next === '4') {
+          tfBufferRef.current = '';
+          if (timeframes.includes('H4')) {
+            update({ tf: 'H4' });
+            showToast('Timeframe: H4');
+          }
+          return;
+        }
+        if (next === '6') {
+          tfBufferRef.current = '';
+          if (timeframes.includes('H1')) {
+            update({ tf: 'H1' });
+            showToast('Timeframe: H1');
+          }
+          return;
+        }
+        if (next === '2') {
+          // 2 เป็นตัวย่อสำหรับ M15
+          tfBufferRef.current = '';
+          if (timeframes.includes('M15')) {
+            update({ tf: 'M15' });
+            showToast('Timeframe: M15');
+          }
+          return;
+        }
+
+        // กรณีเป็นเลข '1' หรือ '3' รอ 350ms เผื่อมีเลข 0 หรือ 5 ตามมา
+        tfTimerRef.current = window.setTimeout(() => {
+          const val = tfBufferRef.current;
+          tfBufferRef.current = '';
+          if (val === '1' && timeframes.includes('M1')) {
+            update({ tf: 'M1' });
+            showToast('Timeframe: M1');
+          } else if (val === '3' && timeframes.includes('M30')) {
+            update({ tf: 'M30' });
+            showToast('Timeframe: M30');
+          }
+        }, 350);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      window.removeEventListener('keydown', handleKey);
+      if (tfTimerRef.current) clearTimeout(tfTimerRef.current);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, [showEma, showLayerBar, timeframes, showToast]);
 
   // symbol ที่จำไว้ไม่มีแล้ว → กลับไปตัวแรก
   useEffect(() => {
@@ -511,7 +683,12 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
 
         <div className="seg" role="group" aria-label="Timeframe">
           {timeframes.map((t) => (
-            <button key={t} onClick={() => update({ tf: t })} aria-pressed={t === tf}>
+            <button
+              key={t}
+              onClick={() => update({ tf: t })}
+              aria-pressed={t === tf}
+              title={`${t}${TF_HOTKEY_HINT[t] ? ` (กด ${TF_HOTKEY_HINT[t]})` : ''}`}
+            >
               {t}
             </button>
           ))}
@@ -564,6 +741,16 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
             <Icon name="refresh" size={15} className={updating ? 'animate-spin' : ''} />
             {updating ? 'กำลังอัปเดต…' : 'อัปเดต'}
           </button>
+          <button
+            type="button"
+            onClick={() => setHotkeyHelpOpen(true)}
+            className="chip text-xs text-muted hover:text-fg"
+            title="ดูรายการคีย์ลัดทั้งหมด (กด ?)"
+          >
+            <Icon name="keyboard" size={13} />
+            <span className="hidden xl:inline">คีย์ลัด</span>
+            <kbd className="rounded bg-field px-1 py-0.2 font-mono text-[10px] text-faint">?</kbd>
+          </button>
         </div>
       </header>
 
@@ -572,7 +759,7 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
         <button
           onClick={() => update({ showEma: !showEma })}
           aria-pressed={showEma}
-          title="EMA 9 / 21 (ท่า 3 ของริวเรน)"
+          title="EMA 9 / 21 (กด E)"
           className="chip"
         >
           <span className="inline-flex gap-[2px]">
@@ -580,7 +767,8 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
               <span key={c} className="h-[3px] w-2.5 rounded-full" style={{ background: c, opacity: showEma ? 1 : 0.35 }} />
             ))}
           </span>
-          EMA 9 / 21
+          <span>EMA 9 / 21</span>
+          <kbd className="rounded bg-field px-1 py-0.2 font-mono text-[10px] text-faint">E</kbd>
         </button>
         <button
           onClick={() => update({ showKeyLevels: !showKeyLevels })}
@@ -597,7 +785,19 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
         </button>
         <ZonePanel value={zoneSettings} onChange={updateZones} count={zones.length} />
         <span className="mx-1 h-5 w-px bg-line" />
-        <LayerBar layers={layers} counts={visuals.counts} onToggle={toggleLayer} htfs={BO_HTF[tf] ?? []} />
+        <button
+          onClick={() => setShowLayerBar((v) => !v)}
+          aria-pressed={showLayerBar}
+          title="เปิด/ปิด แถบโครงสร้างราคา (กด L)"
+          className="chip"
+        >
+          <Icon name="layers" size={13} />
+          <span>โครงสร้าง</span>
+          <kbd className="rounded bg-field px-1 py-0.2 font-mono text-[10px] text-faint">L</kbd>
+        </button>
+        {showLayerBar && (
+          <LayerBar layers={layers} counts={visuals.counts} onToggle={toggleLayer} htfs={BO_HTF[tf] ?? []} />
+        )}
         {info?.market === 'us-stock' && (
           <button
             onClick={() => void openSummary()}
@@ -658,6 +858,11 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
         {(loading || loadingOlder) && (
           <div className="pointer-events-none absolute bottom-10 left-3 rounded-md bg-panel/90 px-2 py-1 text-xs text-muted shadow">
             {loadingOlder ? 'กำลังโหลดแท่งย้อนหลัง…' : 'กำลังโหลด…'}
+          </div>
+        )}
+        {tfToast && (
+          <div className="pointer-events-none absolute bottom-12 left-1/2 z-30 -translate-x-1/2 rounded-full border border-line bg-panel/95 px-3.5 py-1 font-mono text-xs font-semibold text-accent shadow-lg backdrop-blur animate-in fade-in zoom-in-95 duration-100">
+            {tfToast}
           </div>
         )}
       </main>
@@ -721,6 +926,11 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
         symbol={symbol}
         summary={summaryData?.summary ?? null}
         fundamentals={summaryData?.fundamentals ?? null}
+      />
+
+      <HotkeyHelpModal
+        isOpen={hotkeyHelpOpen}
+        onClose={() => setHotkeyHelpOpen(false)}
       />
     </div>
   );

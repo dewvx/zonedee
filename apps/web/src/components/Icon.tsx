@@ -83,6 +83,12 @@ const PATHS = {
   plus: <path d="M12 5v14M5 12h14" />,
   play: <path d="M8 5.5v13l10-6.5z" />,
   check: <path d="m5 12.5 4.5 4.5L19 7.5" />,
+  keyboard: (
+    <>
+      <rect x="2.5" y="5.5" width="19" height="13" rx="2" />
+      <path d="M6 9h.01M9 9h.01M12 9h.01M15 9h.01M18 9h.01M6 12h.01M9 12h.01M12 12h.01M15 12h.01M18 12h.01M8 15h8" />
+    </>
+  ),
   layers: (
     <>
       <path d="m12 4 8.5 4.5L12 13 3.5 8.5z" />
