@@ -31,4 +31,5 @@ export * from './scan/watch-metrics';
 export * from './scan/key-levels';
 export * from './scan/rebalance';
 export * from './scan/stock-summary';
+export * from './scan/stock-news';
 export * from './journal/calendar';

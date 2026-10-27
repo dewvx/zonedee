@@ -8,6 +8,7 @@ import type { Fetchers } from '../src/fetch-job';
 import { ingest } from '../src/ingest';
 import { CandleStore } from '../src/store';
 import { findSymbol, type SymbolConfig } from '../src/symbols';
+import { NewsCache } from '../src/news';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = any;
@@ -40,7 +41,12 @@ beforeEach(async () => {
       return generateSampleCandles({ count, timeframe: tf, startPrice: 2650, startTime: from.getTime() - (from.getTime() % 60_000) });
     },
   };
-  const app = createApp({ store, runFetch: createFetchRunner(store, fetchers), symbols: [gold, eur] });
+  const app = createApp({
+    store,
+    runFetch: createFetchRunner(store, fetchers),
+    symbols: [gold, eur],
+    news: new NewsCache(':memory:'),
+  });
   server = await new Promise<Server>((resolve) => {
     const s = app.listen(0, () => resolve(s));
   });
@@ -206,5 +212,31 @@ describe('GET /api/candles?after', () => {
     expect(res.candles).toHaveLength(10);
     expect(res.candles[0].time).toBe(MON + 30 * 60_000);
     expect(res.hasMore).toBe(true);
+  });
+});
+
+describe('News API', () => {
+  it('GET /api/news ไม่มี symbol → 400', async () => {
+    const res = await fetch(`${base}/api/news`);
+    expect(res.status).toBe(400);
+  });
+
+  it('GET /api/news ส่งคืนโครงสร้าง StockNewsSummary', async () => {
+    const res = await fetch(`${base}/api/news?symbol=AAPL`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Json;
+    expect(body.symbol).toBe('AAPL');
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(body.overallSentiment).toBeDefined();
+    expect(body.headlineSummary).toBeDefined();
+  });
+
+  it('POST /api/news/summarize ไม่มี symbol → 400', async () => {
+    const res = await fetch(`${base}/api/news/summarize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
   });
 });

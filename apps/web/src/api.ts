@@ -16,6 +16,8 @@ import type {
   Timeframe,
   FundamentalData,
   StockSummaryResult,
+  StockNewsItem,
+  StockNewsSummary,
 } from '@zonedee/core';
 
 export type DataSourceName = 'dukascopy' | 'yahoo' | 'mt5';
@@ -368,6 +370,12 @@ export interface FundamentalsResponse {
 
 export const fetchFundamentals = (symbol: string) =>
   request<FundamentalsResponse>(`/api/fundamentals?symbol=${encodeURIComponent(symbol)}`);
+
+export const fetchNews = (symbol: string, force = false) =>
+  request<StockNewsSummary>(`/api/news?symbol=${encodeURIComponent(symbol)}${force ? '&force=true' : ''}`);
+
+export const summarizeNewsWithAi = (symbol: string) =>
+  postJson<{ symbol: string; aiSummary: string }>('/api/news/summarize', { symbol });
 
 export interface ScanSource {
   id: string;

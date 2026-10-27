@@ -34,6 +34,7 @@ import { SYMBOLS, findSymbol, type SymbolConfig } from './symbols';
 import { TICKER_RE, type SymbolRegistry, type UserSymbolStore } from './user-symbols';
 import type { EarningsCache } from './earnings';
 import type { FundamentalsCache } from './fundamentals';
+import type { NewsCache } from './news';
 import { watchRows, type WatchInput, type WatchlistStore } from './watchlist';
 
 export interface AppDeps {
@@ -59,6 +60,8 @@ export interface AppDeps {
   earnings?: EarningsCache;
   /** ข้อมูลงบการเงินย่อและอัตราส่วนทางการเงิน */
   fundamentals?: FundamentalsCache;
+  /** ข่าวสารและสรุป Sentiment หุ้น */
+  news?: NewsCache;
 }
 
 export function createApp(deps: AppDeps) {
@@ -76,6 +79,7 @@ export function createApp(deps: AppDeps) {
     scan,
     earnings,
     fundamentals,
+    news,
   } = deps;
   const app = express();
   // รูปกราฟใน journal ส่งมาเป็น data URL → เผื่อขนาดไว้
@@ -598,6 +602,46 @@ export function createApp(deps: AppDeps) {
       : null;
 
     res.json({ symbol, fundamentals: data, summary });
+  });
+
+  /** GET /api/news?symbol=AAPL — ข่าวล่าสุดและสรุป Sentiment */
+  app.get('/api/news', async (req, res) => {
+    const symbol = String(req.query.symbol ?? '').toUpperCase();
+    if (!symbol) {
+      res.status(400).json({ error: 'ต้องระบุ symbol' });
+      return;
+    }
+    if (!news) {
+      res.status(501).json({ error: 'ไม่ได้เปิดใช้บริการข่าว' });
+      return;
+    }
+    const force = req.query.force === 'true';
+    try {
+      const summary = await news.getOrFetch(symbol, force);
+      res.json(summary);
+    } catch (err) {
+      fail(res, err, 500);
+    }
+  });
+
+  /** POST /api/news/summarize — เรียก AI (Gemini) สรุปข่าวเป็นภาษาไทย */
+  app.post('/api/news/summarize', async (req, res) => {
+    const body = (req.body ?? {}) as { symbol?: string };
+    const symbol = String(body.symbol ?? '').toUpperCase();
+    if (!symbol) {
+      res.status(400).json({ error: 'ต้องระบุ symbol' });
+      return;
+    }
+    if (!news) {
+      res.status(501).json({ error: 'ไม่ได้เปิดใช้บริการข่าว' });
+      return;
+    }
+    try {
+      const aiSummary = await news.summarizeWithAi(symbol);
+      res.json({ symbol, aiSummary });
+    } catch (err) {
+      fail(res, err, 400);
+    }
   });
 
   app.get('/api/scan/sources', (_req, res) => res.json(SCAN_SOURCES));

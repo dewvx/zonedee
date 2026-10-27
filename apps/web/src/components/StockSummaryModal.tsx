@@ -1,4 +1,6 @@
-import type { FundamentalData, StockSummaryResult } from '@zonedee/core';
+import { useEffect, useState } from 'react';
+import type { FundamentalData, StockNewsSummary, StockSummaryResult } from '@zonedee/core';
+import { fetchNews, summarizeNewsWithAi } from '../api';
 import { Icon } from './Icon';
 
 interface StockSummaryModalProps {
@@ -20,6 +22,19 @@ const fmtMoney = (v?: number | null) => {
   return `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 };
 
+function formatRelativeTimeThai(ms: number): string {
+  const diffSec = Math.floor((Date.now() - ms) / 1000);
+  if (diffSec < 60) return 'เมื่อสักครู่';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} นาทีที่แล้ว`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} ชม. ที่แล้ว`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay === 1) return 'เมื่อวาน';
+  if (diffDay < 7) return `${diffDay} วันที่แล้ว`;
+  return new Date(ms).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+}
+
 export function StockSummaryModal({
   isOpen,
   onClose,
@@ -28,6 +43,47 @@ export function StockSummaryModal({
   fundamentals,
   onOpenChart,
 }: StockSummaryModalProps) {
+  const [news, setNews] = useState<StockNewsSummary | null>(null);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsError, setNewsError] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  // ดึงข่าวล่าสุดเมื่อเปิด modal
+  useEffect(() => {
+    if (isOpen && symbol) {
+      setNewsLoading(true);
+      setNewsError(null);
+      setAiError(null);
+      fetchNews(symbol)
+        .then((res) => setNews(res))
+        .catch((err) => setNewsError((err as Error).message))
+        .finally(() => setNewsLoading(false));
+    }
+  }, [isOpen, symbol]);
+
+  const handleReloadNews = (force = true) => {
+    setNewsLoading(true);
+    setNewsError(null);
+    fetchNews(symbol, force)
+      .then((res) => setNews(res))
+      .catch((err) => setNewsError((err as Error).message))
+      .finally(() => setNewsLoading(false));
+  };
+
+  const handleSummarizeAi = async () => {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const res = await summarizeNewsWithAi(symbol);
+      setNews((prev) => (prev ? { ...prev, aiSummary: res.aiSummary } : null));
+    } catch (err) {
+      setAiError((err as Error).message);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   const biasCls =
@@ -50,7 +106,7 @@ export function StockSummaryModal({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-2xl"
+        className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -131,6 +187,172 @@ export function StockSummaryModal({
               กำลังรวบรวมข้อมูลหรือไม่มีข้อมูลแท่งราคาเพียงพอสำหรับวิเคราะห์
             </div>
           )}
+
+          {/* ข่าวสารล่าสุด & การวิเคราะห์ Sentiment */}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Icon name="newspaper" size={15} className="text-accent" />
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">
+                  ข่าวล่าสุด & ปัจจัยกระทบ (Market News)
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                {news && (
+                  <span
+                    className={`badge border text-[11px] font-medium ${
+                      news.overallSentiment === 'positive'
+                        ? 'border-bull/30 bg-bull/15 text-bull'
+                        : news.overallSentiment === 'negative'
+                          ? 'border-bear/30 bg-bear/15 text-bear'
+                          : 'border-line bg-field text-muted'
+                    }`}
+                  >
+                    {news.overallSentiment === 'positive'
+                      ? `● ภาพรวมข่าว: เชิงบวก (+${news.positiveCount})`
+                      : news.overallSentiment === 'negative'
+                        ? `● ภาพรวมข่าว: ระวัง (-${news.negativeCount})`
+                        : '● ภาพรวมข่าว: ทรงตัว/ปกติ'}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleReloadNews(true)}
+                  disabled={newsLoading}
+                  className="rounded p-1 text-muted hover:bg-hover hover:text-fg disabled:opacity-40"
+                  title="รีเฟรชข่าวล่าสุด"
+                >
+                  <Icon name="refresh" size={13} className={newsLoading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            </div>
+
+            {/* สรุปพาดหัวข่าวภาษาไทย */}
+            {news?.headlineSummary && (
+              <div className="rounded-lg border border-line bg-field/40 px-3.5 py-2.5 text-xs text-fg-2">
+                <span className="font-semibold text-fg">สรุปกระแสข่าว: </span>
+                <span>{news.headlineSummary}</span>
+              </div>
+            )}
+
+            {/* AI Summary Box */}
+            {news?.aiSummary ? (
+              <div className="rounded-xl border border-accent/35 bg-accent/5 p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-accent">
+                    <Icon name="sparkles" size={14} />
+                    <span>บทวิเคราะห์ข่าวเชิงลึกโดย AI (ภาษาไทย)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSummarizeAi}
+                    disabled={aiLoading}
+                    className="text-[11px] text-muted hover:text-accent hover:underline disabled:opacity-40"
+                  >
+                    {aiLoading ? 'กำลังวิเคราะห์ใหม่…' : 'วิเคราะห์ใหม่'}
+                  </button>
+                </div>
+                <div className="text-xs leading-relaxed text-fg whitespace-pre-line">
+                  {news.aiSummary}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line/60 bg-panel px-3.5 py-2 text-xs">
+                <div className="flex items-center gap-2 text-muted">
+                  <Icon name="sparkles" size={13} className="text-accent" />
+                  <span>
+                    {news?.hasAiKey
+                      ? 'คลิกปุ่มด้านขวาเพื่อให้ AI ช่วยอ่านและสรุปข่าวเป็นภาษาไทย'
+                      : 'ระบุ GEMINI_API_KEY ในไฟล์ .env เพื่อเปิดใช้ปุ่มสรุปข่าวด้วย AI'}
+                  </span>
+                </div>
+                {news?.hasAiKey && (
+                  <button
+                    type="button"
+                    onClick={handleSummarizeAi}
+                    disabled={aiLoading || newsLoading || !news.items?.length}
+                    className="btn btn-sm btn-primary"
+                  >
+                    <Icon name="sparkles" size={12} />
+                    {aiLoading ? 'AI กำลังอ่านและสรุป…' : 'ให้ AI สรุปเป็นภาษาไทย'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {aiError && (
+              <div className="rounded-lg border border-bad/30 bg-bad/10 px-3 py-2 text-xs text-bad">
+                {aiError}
+              </div>
+            )}
+
+            {/* รายการข่าวล่าสุด */}
+            {newsLoading && !news ? (
+              <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted">
+                <Icon name="refresh" size={14} className="animate-spin text-accent" />
+                กำลังดึงข่าวล่าสุดจาก Yahoo Finance...
+              </div>
+            ) : news && news.items.length > 0 ? (
+              <div className="space-y-2">
+                {news.items.slice(0, 6).map((item) => (
+                  <a
+                    key={item.id}
+                    href={item.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group flex items-start gap-3 rounded-lg border border-line bg-field/30 p-2.5 transition-colors hover:border-line-strong hover:bg-hover"
+                  >
+                    {item.thumbnail && (
+                      <img
+                        src={item.thumbnail}
+                        alt=""
+                        className="h-12 w-16 shrink-0 rounded object-cover border border-line"
+                        loading="lazy"
+                      />
+                    )}
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-[11px] text-muted">{item.publisher}</span>
+                        <span className="text-[11px] text-faint">· {formatRelativeTimeThai(item.publishedAt)}</span>
+                        <span
+                          className={`ml-auto badge text-[10px] ${
+                            item.sentiment === 'positive'
+                              ? 'bg-bull/15 text-bull'
+                              : item.sentiment === 'negative'
+                                ? 'bg-bear/15 text-bear'
+                                : 'bg-field text-faint'
+                          }`}
+                        >
+                          {item.sentiment === 'positive'
+                            ? '🟢 ปัจจัยบวก'
+                            : item.sentiment === 'negative'
+                              ? '🔴 ปัจจัยลบ'
+                              : '⚪ ทั่วไป'}
+                        </span>
+                      </div>
+                      <div className="text-xs font-medium text-fg group-hover:text-accent flex items-start justify-between gap-2">
+                        <span className="line-clamp-2 leading-snug">{item.title}</span>
+                        <Icon name="external" size={12} className="shrink-0 text-muted group-hover:text-accent mt-0.5" />
+                      </div>
+                      {item.highlightKeywords.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          {item.highlightKeywords.map((k) => (
+                            <span key={k} className="rounded bg-panel px-1.5 py-0.5 text-[10px] text-fg-2">
+                              {k}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-line bg-field/20 p-4 text-center text-xs text-muted">
+                {newsError ? `ดึงข่าวไม่สำเร็จ: ${newsError}` : `ไม่พบข่าวล่าสุดสำหรับ ${symbol}`}
+              </div>
+            )}
+          </div>
 
           {/* งบการเงินย่อและอัตราส่วนทางการเงิน */}
           <div className="space-y-2.5">

@@ -13,6 +13,7 @@ import { CandleStore, DEFAULT_DB_PATH } from './store';
 import { fetchYahoo, yahooEarnings, yahooFundamentals, yahooScreener } from './fetchers/yahoo';
 import { EarningsCache } from './earnings';
 import { FundamentalsCache } from './fundamentals';
+import { NewsCache } from './news';
 import { createScanner } from './scanner';
 import { UserSymbolStore, createSymbolRegistry } from './user-symbols';
 import { WatchlistStore } from './watchlist';
@@ -34,6 +35,7 @@ const scan = createScanner({
 });
 const earnings = new EarningsCache(DEFAULT_DB_PATH, (symbols) => yahooEarnings(symbols));
 const fundamentals = new FundamentalsCache(DEFAULT_DB_PATH, (symbols) => yahooFundamentals(symbols));
+const news = new NewsCache(DEFAULT_DB_PATH);
 const line = createLineNotifier(lineConfigFromEnv());
 const alertStore = new AlertStore(DEFAULT_DB_PATH);
 const engine = createAlertEngine({
@@ -58,6 +60,7 @@ const app = createApp({
   scan,
   earnings,
   fundamentals,
+  news,
 });
 engine.start(30_000);
 
