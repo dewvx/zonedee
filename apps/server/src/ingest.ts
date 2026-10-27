@@ -23,7 +23,13 @@ export function ingest(
     const from = bucketStart(sorted[0]!.time, 'W1');
     const to = sorted.at(-1)!.time + TIMEFRAME_MS[nativeTf];
     const source = store.range(cfg.symbol, nativeTf, from, to);
-    for (const tf of targets) derived[tf] = store.upsert(cfg.symbol, tf, resample(source, tf));
+    for (const tf of targets) {
+      derived[tf] = store.upsert(
+        cfg.symbol,
+        tf,
+        resample(source, tf, tf === 'D1' ? (cfg.d1Cutoff ?? 'utc') : 'utc'),
+      );
+    }
   }
   return { native: sorted.length, derived };
 }

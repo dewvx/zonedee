@@ -1,4 +1,4 @@
-import { DEFAULTS, isTimeframe, type Timeframe } from '@zonedee/core';
+import { DEFAULTS, isTimeframe, type D1Cutoff, type Timeframe } from '@zonedee/core';
 import { DEFAULT_LAYERS, type LayerToggles } from './overlays';
 
 /** ตั้งค่าโซนแนวรับแนวต้าน (ชื่อตรงกับ DEFAULTS ใน core/config) */
@@ -43,6 +43,8 @@ export interface Settings {
   /** เส้นแนวรับต้านหลัก (แบบง่าย ฝั่งละ 3 เส้น) */
   showKeyLevels: boolean;
   autoUpdate: boolean;
+  /** เวลาตัดแท่ง Daily: 'utc' (00:00 UTC) หรือ 'ny-close' (17:00 NY) */
+  d1Cutoff: D1Cutoff;
   zones: ZoneSettings;
   layers: LayerToggles;
   risk: RiskSettings;
@@ -65,6 +67,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showEma: true,
   showKeyLevels: false,
   autoUpdate: false,
+  d1Cutoff: 'utc',
   zones: DEFAULT_ZONE_SETTINGS,
   layers: DEFAULT_LAYERS,
   risk: DEFAULT_RISK,
@@ -93,6 +96,7 @@ export function loadSettings(): Settings {
       showEma: bool(s.showEma, DEFAULT_SETTINGS.showEma),
       showKeyLevels: bool(s.showKeyLevels, DEFAULT_SETTINGS.showKeyLevels),
       autoUpdate: bool(s.autoUpdate, DEFAULT_SETTINGS.autoUpdate),
+      d1Cutoff: s.d1Cutoff === 'ny-close' ? 'ny-close' : 'utc',
       zones: {
         show: bool(z.show, dz.show),
         showSwings: bool(z.showSwings, dz.showSwings),

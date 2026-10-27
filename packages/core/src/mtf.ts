@@ -1,4 +1,4 @@
-import { resample } from './resample';
+import { resample, type D1Cutoff } from './resample';
 import { TIMEFRAME_MS, type Candle, type Timeframe } from './types';
 
 export interface HtfView {
@@ -16,8 +16,13 @@ export interface HtfView {
  * กฎ no-look-ahead: แท่ง HTF ใช้ได้เมื่อมีแท่ง LTF ที่ปิดหลังเวลาปิดของแท่ง HTF นั้นแล้ว
  * (ช่วงตลาดปิด/วันหยุด → รอแท่ง LTF แรกหลังช่วงนั้น ซึ่งช้ากว่าจริงนิดหน่อยแต่ไม่มีทางโกง)
  */
-export function htfView(ltf: readonly Candle[], ltfTf: Timeframe, htfTf: Timeframe): HtfView {
-  const candles = resample(ltf, htfTf);
+export function htfView(
+  ltf: readonly Candle[],
+  ltfTf: Timeframe,
+  htfTf: Timeframe,
+  d1Cutoff: D1Cutoff = 'utc',
+): HtfView {
+  const candles = resample(ltf, htfTf, d1Cutoff);
   const ltfMs = TIMEFRAME_MS[ltfTf];
   const htfMs = TIMEFRAME_MS[htfTf];
   const availableAt = candles.map((h) => {

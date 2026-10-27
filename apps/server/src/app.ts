@@ -4,9 +4,12 @@ import {
   generateSampleCandles,
   isTimeframe,
   keyLevels,
+  resample,
   seedFromString,
   summarizeStock,
   watchMetrics,
+  type Candle,
+  type D1Cutoff,
 } from '@zonedee/core';
 import { BacktestError, backtestCompare, backtestOne, strategyList, type BacktestRequest } from './backtest';
 import type { ContractInfo } from './contract';
@@ -97,6 +100,7 @@ export function createApp(deps: AppDeps) {
           description: s.description,
           source: s.source,
           timeframes: s.timeframes,
+          d1Cutoff: s.d1Cutoff ?? 'utc',
           user: registry?.isUser(s.symbol) ?? false,
           data: base ? { tf: base.timeframe, count: base.count, first: base.first, last: base.last } : null,
           coverage: Object.fromEntries(
@@ -194,6 +198,13 @@ export function createApp(deps: AppDeps) {
     const count = Math.min(Math.max(Number(req.query.count ?? 1000) || 1000, 10), 5000);
     const before = req.query.before ? Number(req.query.before) : undefined;
     const after = req.query.after ? Number(req.query.after) : undefined;
+    const cutoffParam = req.query.cutoff ?? req.query.d1Cutoff;
+    const cutoff: D1Cutoff =
+      cutoffParam === 'ny-close' || cutoffParam === 'ny'
+        ? 'ny-close'
+        : cutoffParam === 'utc'
+          ? 'utc'
+          : (cfg?.d1Cutoff ?? 'utc');
 
     if (!cfg) {
       res.status(404).json({ error: `ไม่รู้จัก symbol: ${req.query.symbol}` });
@@ -202,6 +213,43 @@ export function createApp(deps: AppDeps) {
     if (!isTimeframe(tf) || !cfg.timeframes.includes(tf)) {
       res.status(400).json({ error: `${cfg.symbol} ไม่มี timeframe ${tf} (มี: ${cfg.timeframes.join(', ')})` });
       return;
+    }
+
+    // กรณี D1 แบบ NY Close ของตลาด Forex ให้คำนวณจาก H1 (หรือ M1) ที่มี
+    if (tf === 'D1' && cutoff === 'ny-close' && cfg.market === 'forex') {
+      const h1Count = count * 24 + 48;
+      let sourceCandles: Candle[] = [];
+      if (after !== undefined) {
+        sourceCandles = store.after(cfg.symbol, 'H1', Math.max(0, after - 24 * 3600_000), h1Count);
+        if (sourceCandles.length === 0) {
+          sourceCandles = store.after(cfg.symbol, 'M1', Math.max(0, after - 24 * 3600_000), h1Count * 60);
+        }
+      } else {
+        sourceCandles = store.latest(cfg.symbol, 'H1', h1Count, before ? before + 24 * 3600_000 : undefined);
+        if (sourceCandles.length === 0) {
+          sourceCandles = store.latest(cfg.symbol, 'M1', h1Count * 60, before ? before + 24 * 3600_000 : undefined);
+        }
+      }
+
+      if (sourceCandles.length > 0) {
+        let d1Candles = resample(sourceCandles, 'D1', 'ny-close');
+        if (before !== undefined) {
+          d1Candles = d1Candles.filter((c) => c.time < before);
+        }
+        if (after !== undefined) {
+          d1Candles = d1Candles.filter((c) => c.time >= after);
+        }
+        const sliced = after !== undefined ? d1Candles.slice(0, count) : d1Candles.slice(-count);
+        res.json({
+          symbol: cfg.symbol,
+          timeframe: tf,
+          cutoff: 'ny-close',
+          source: cfg.source,
+          candles: sliced,
+          hasMore: sliced.length === count,
+        });
+        return;
+      }
     }
 
     if (after !== undefined) {

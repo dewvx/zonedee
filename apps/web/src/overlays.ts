@@ -9,6 +9,7 @@ import {
   isBucketClosed,
   resample,
   type Candle,
+  type D1Cutoff,
   type SwingPoint,
   type Timeframe,
   type Zone,
@@ -68,6 +69,7 @@ export interface BuildInput {
   zones: Zone[];
   swings: SwingPoint[];
   layers: LayerToggles;
+  d1Cutoff?: D1Cutoff;
 }
 
 export interface BuildOutput {
@@ -78,7 +80,7 @@ export interface BuildOutput {
 }
 
 /** แปลงผลจาก core ทั้งหมด → สิ่งที่วาดบนกราฟ (เวลา snap เข้ากับแท่งจริงแล้ว) */
-export function buildOverlays({ candles, tf, swingLength, zones, swings, layers }: BuildInput): BuildOutput {
+export function buildOverlays({ candles, tf, swingLength, zones, swings, layers, d1Cutoff = 'utc' }: BuildInput): BuildOutput {
   const overlays: OverlayItem[] = [];
   const markers: SeriesMarker<Time>[] = [];
   const counts = { zones: zones.length, bos: 0, fvg: 0, ob: 0, sweep: 0, bo: 0, boHtf: 0 };
@@ -172,11 +174,13 @@ export function buildOverlays({ candles, tf, swingLength, zones, swings, layers 
     counts.bo = add(candles, tf, MAX.bo, false);
     if (layers.boHtf) {
       for (const htf of BO_HTF[tf] ?? []) {
-        let htfCandles = resample(candles, htf);
+        let htfCandles = resample(candles, htf, htf === 'D1' ? d1Cutoff : 'utc');
         // แท่ง TF ใหญ่ล่าสุดที่ยังไม่ปิด ห้ามใช้ (กฎ no-look-ahead)
         const lastHtf = htfCandles.at(-1);
         const now = candles.at(-1)!.time + TIMEFRAME_MS[tf];
-        if (lastHtf && !isBucketClosed(lastHtf.time, htf, now)) htfCandles = htfCandles.slice(0, -1);
+        if (lastHtf && !isBucketClosed(lastHtf.time, htf, now, htf === 'D1' ? d1Cutoff : 'utc')) {
+          htfCandles = htfCandles.slice(0, -1);
+        }
         counts.boHtf += add(htfCandles, htf, MAX.boHtf, true);
       }
     }

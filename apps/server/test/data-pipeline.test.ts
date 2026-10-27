@@ -121,6 +121,25 @@ describe('ingest', () => {
     expect(store.latest('XAUUSD', 'M15', 1000)).toEqual(resample(m5, 'M15'));
   });
 
+  it('forex ที่ตั้ง d1Cutoff ny-close: resample D1 ตัดตาม NY Close', () => {
+    const fxNy: SymbolConfig = {
+      ...findSymbol('XAUUSD')!,
+      source: 'mt5',
+      sourceSymbol: 'GOLD',
+      d1Cutoff: 'ny-close',
+      natives: [{ tf: 'M1', maxDays: 30, chunkDays: 7 }],
+    };
+    const sun22 = Date.UTC(2026, 9, 18, 22, 0);
+    const m1 = [
+      { time: sun22, open: 2000, high: 2010, low: 1995, close: 2005, volume: 10 },
+      { time: sun22 + 10 * 3600_000, open: 2005, high: 2025, low: 2000, close: 2020, volume: 20 },
+    ];
+    ingest(store, fxNy, 'M1', m1);
+    const d1 = store.latest('XAUUSD', 'D1', 10);
+    expect(d1).toHaveLength(1);
+    expect(d1[0]!.time).toBe(Date.UTC(2026, 9, 18, 21, 0)); // 21:00 UTC (17:00 NY)
+  });
+
   it('หุ้น: native D1 สร้าง W1 แต่ไม่สร้าง TF เล็กกว่า', () => {
     const d1 = generateSampleCandles({ count: 30, timeframe: 'D1', startPrice: 230, startTime: MON });
     ingest(store, aapl, 'D1', d1);

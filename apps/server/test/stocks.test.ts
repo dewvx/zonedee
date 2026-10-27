@@ -161,6 +161,22 @@ describe('user symbols + watchlist API', () => {
     expect((await send('DELETE', '/api/user-symbols/SOFI')).status).toBe(204);
     expect(store.latest('SOFI', 'D1', 5)).toEqual([]);
   });
+
+  it('GET /api/candles รองรับ cutoff=ny-close และ cutoff=utc สำหรับ forex D1', async () => {
+    const sun22 = Date.UTC(2026, 9, 18, 22, 0);
+    const h1 = [
+      { time: sun22, open: 2000, high: 2010, low: 1995, close: 2005, volume: 10 },
+      { time: sun22 + 3600_000, open: 2005, high: 2025, low: 2000, close: 2020, volume: 20 },
+    ];
+    store.upsert('XAUUSD', 'H1', h1);
+
+    const resNy = await fetch(`${base}/api/candles?symbol=XAUUSD&tf=D1&cutoff=ny-close`);
+    expect(resNy.status).toBe(200);
+    const dataNy = (await resNy.json()) as Json;
+    expect(dataNy.candles).toHaveLength(1);
+    expect(dataNy.candles[0].time).toBe(Date.UTC(2026, 9, 18, 21, 0)); // 21:00 UTC (17:00 NY)
+    expect(dataNy.cutoff).toBe('ny-close');
+  });
 });
 
 describe('วันประกาศงบ + กฎแจ้งเตือนแบบใหม่', () => {

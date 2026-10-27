@@ -1,4 +1,4 @@
-import type { SymbolInfo, Timeframe } from '@zonedee/core';
+import type { D1Cutoff, SymbolInfo, Timeframe } from '@zonedee/core';
 
 /**
  * รายชื่อ symbol ที่แอปรู้จัก — อยากเพิ่มตัวไหน เพิ่มที่นี่แล้วรัน `npm run fetch`
@@ -41,6 +41,8 @@ export interface SymbolConfig extends SymbolInfo {
   defaultHistoryDays: number;
   /** ราคาเริ่มต้นของข้อมูลจำลอง ตอนยังไม่มีข้อมูลจริง */
   samplePrice: number;
+  /** ตัวเลือกเวลาตัดแท่ง Daily: 'utc' (00:00 UTC) หรือ 'ny-close' (17:00 NY) */
+  d1Cutoff?: D1Cutoff;
 }
 
 const FOREX_TFS: Timeframe[] = ['M1', 'M5', 'M10', 'M15', 'M30', 'H1', 'H2', 'H4', 'D1', 'W1'];
@@ -70,7 +72,11 @@ interface ForexDef {
   names: { yahoo: string; mt5: string; dukascopy: string };
 }
 
-const forex = (d: ForexDef, source: ForexSource = FOREX_SOURCE): SymbolConfig => ({
+const forex = (
+  d: ForexDef,
+  source: ForexSource = FOREX_SOURCE,
+  d1Cutoff: D1Cutoff = 'utc',
+): SymbolConfig => ({
   symbol: d.symbol,
   market: 'forex',
   digits: d.digits,
@@ -82,6 +88,7 @@ const forex = (d: ForexDef, source: ForexSource = FOREX_SOURCE): SymbolConfig =>
   timeframes: FOREX_TFS,
   defaultHistoryDays: source === 'yahoo' ? 729 : 180,
   samplePrice: d.samplePrice,
+  d1Cutoff,
 });
 
 export const usStock = (symbol: string, description: string, samplePrice: number): SymbolConfig => ({

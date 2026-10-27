@@ -10,7 +10,7 @@
 
 | รหัส | ชื่อฟีเจอร์ | หมวดหมู่ | ความสำคัญ | สถานะ |
 |---|---|---|---|---|
-| **TASK-01** | ปรับเวลาตัดแท่ง Daily ตาม NY Close (17:00 NY) | Forex / Trading Data | สูง | 🟡 รอดำเนินการ |
+| **TASK-01** | ปรับเวลาตัดแท่ง Daily ตาม NY Close (17:00 NY) | Forex / Trading Data | สูง | ✅ เสร็จสิ้น |
 | **TASK-02** | Hotkeys / คีย์ลัดบนหน้ากราฟและโหมด Replay | UI / UX Usability | สูง | 🟡 รอดำเนินการ |
 | **TASK-03** | ปฏิทินบันทึกการเทรดใน Journal (Trade Calendar) | Trading Journal | กลาง | 🟡 รอดำเนินการ |
 | **TASK-04** | ท่าเทรดใหม่: ท่า 4 AMD (Accumulation, Manipulation, Distribution) | SMC Strategy | กลาง-สูง | 🟡 รอดำเนินการ |

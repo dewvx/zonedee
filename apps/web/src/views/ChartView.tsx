@@ -82,7 +82,7 @@ export interface ChartNav {
 
 export default function ChartView({ nav }: { nav?: ChartNav | null }) {
   const [settings, setSettings] = useState<Settings>(loadSettings);
-  const { symbol, tf, showEma, showKeyLevels, autoUpdate, zones: zoneSettings, layers, risk } = settings;
+  const { symbol, tf, showEma, showKeyLevels, autoUpdate, zones: zoneSettings, layers, risk, d1Cutoff } = settings;
   const update = (patch: Partial<Settings>) => setSettings((s) => ({ ...s, ...patch }));
   const updateZones = (patch: Partial<ZoneSettings>) =>
     setSettings((s) => ({ ...s, zones: { ...s.zones, ...patch } }));
@@ -131,7 +131,7 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
 
-  const key = `${symbol}:${tf}`;
+  const key = `${symbol}:${tf}:${tf === 'D1' ? d1Cutoff : ''}`;
   const keyRef = useRef(key);
   keyRef.current = key;
   const loadingOlderRef = useRef(false);
@@ -175,7 +175,7 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
     let cancelled = false;
     setLoading(true);
     setStatus(null);
-    fetchCandles(symbol, tf, PAGE_SIZE)
+    fetchCandles(symbol, tf, PAGE_SIZE, undefined, tf === 'D1' ? d1Cutoff : undefined)
       .then((res) => {
         if (cancelled) return;
         setSeries({ key, candles: res.candles, source: res.source, hasMore: res.hasMore });
@@ -186,7 +186,7 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
     return () => {
       cancelled = true;
     };
-  }, [symbol, tf, tfReady, key]);
+  }, [symbol, tf, tfReady, key, d1Cutoff]);
 
   // เลื่อนกราฟไปทางซ้ายจนสุด → โหลดแท่งเก่าเพิ่ม
   const loadOlder = useCallback(() => {
@@ -196,7 +196,7 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
     const requestKey = series.key;
     loadingOlderRef.current = true;
     setLoadingOlder(true);
-    fetchCandles(symbol, tf, PAGE_SIZE, oldest.time)
+    fetchCandles(symbol, tf, PAGE_SIZE, oldest.time, tf === 'D1' ? d1Cutoff : undefined)
       .then((res) => {
         setSeries((prev) =>
           prev && prev.key === requestKey
@@ -209,7 +209,7 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
         loadingOlderRef.current = false;
         setLoadingOlder(false);
       });
-  }, [series, symbol, tf]);
+  }, [series, symbol, tf, d1Cutoff]);
 
   // ปุ่มอัปเดต: ให้ server ดึงข้อมูลใหม่จากแหล่ง แล้วเอาแท่งล่าสุดมารวมกับที่มีอยู่
   const runUpdate = useCallback(
@@ -220,7 +220,7 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
       if (!silent) setStatus(null);
       try {
         const result = await triggerFetch(symbol);
-        const latest = await fetchCandles(symbol, tf, PAGE_SIZE);
+        const latest = await fetchCandles(symbol, tf, PAGE_SIZE, undefined, tf === 'D1' ? d1Cutoff : undefined);
         setSeries((prev) => {
           if (!prev || prev.key !== requestKey) return prev;
           // เดิมเป็นข้อมูลจำลอง → แทนที่ทั้งชุด ห้ามรวม
@@ -243,7 +243,7 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
         setUpdating(false);
       }
     },
-    [symbol, tf, updating, refreshSymbols],
+    [symbol, tf, d1Cutoff, updating, refreshSymbols],
   );
 
   // อัปเดตอัตโนมัติ (เฉพาะ symbol ที่มีข้อมูลจริงแล้ว)
@@ -293,8 +293,8 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
   );
   // ทุกอย่างที่วาดทับกราฟ (โซน + โครงสร้างราคา) คำนวณจาก core แล้วแปลงเป็นกล่อง/เส้น
   const visuals = useMemo(
-    () => buildOverlays({ candles, tf, swingLength, zones, swings, layers }),
-    [candles, tf, swingLength, zones, swings, layers],
+    () => buildOverlays({ candles, tf, swingLength, zones, swings, layers, d1Cutoff }),
+    [candles, tf, swingLength, zones, swings, layers, d1Cutoff],
   );
 
   // ── เครื่องคิด lot (Phase 5) ──────────────────────────────────────────────
@@ -516,6 +516,30 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
             </button>
           ))}
         </div>
+
+        {tf === 'D1' && info?.market === 'forex' && (
+          <div className="flex items-center gap-1.5 text-xs text-muted" title="เวลาตัดแท่ง Daily (D1) ของตลาด Forex">
+            <span>ตัดแท่ง:</span>
+            <div className="seg" role="group" aria-label="D1 Cutoff">
+              <button
+                type="button"
+                onClick={() => update({ d1Cutoff: 'ny-close' })}
+                aria-pressed={d1Cutoff === 'ny-close'}
+                title="ตัดแท่งตอน New York Close (17:00 NY / ตี 4-ตี 5 ไทย) — ตรงกับ MT5 ของ XM ไม่มีแท่งวันอาทิตย์"
+              >
+                NY Close (17:00)
+              </button>
+              <button
+                type="button"
+                onClick={() => update({ d1Cutoff: 'utc' })}
+                aria-pressed={d1Cutoff === 'utc'}
+                title="ตัดแท่งตาม 00:00 UTC (ตี 7 ไทย)"
+              >
+                UTC (00:00)
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="ml-auto flex items-center gap-3">
           {lastBarOpen && (

@@ -6,6 +6,7 @@ import type {
   BacktestResult,
   Candle,
   ContractSpec,
+  D1Cutoff,
   DetectorConfig,
   Market,
   ParamSpec,
@@ -25,6 +26,7 @@ export interface SymbolSummary {
   description: string;
   source: DataSourceName;
   timeframes: Timeframe[];
+  d1Cutoff?: D1Cutoff;
   /** null = ยังไม่ได้ดึงข้อมูลจริง */
   data: { tf: Timeframe; count: number; first: number; last: number } | null;
   /** ช่วงข้อมูลที่มีของแต่ละ TF */
@@ -36,6 +38,7 @@ export interface SymbolSummary {
 export interface CandlesResponse {
   symbol: string;
   timeframe: Timeframe;
+  cutoff?: D1Cutoff;
   source: DataSourceName | 'sample';
   candles: Candle[];
   /** น่าจะยังมีแท่งเก่ากว่านี้ให้โหลดอีก */
@@ -72,9 +75,15 @@ export interface SymbolSearchResult {
 export const searchSymbols = (q: string) =>
   request<SymbolSearchResult[]>(`/api/symbols/search?q=${encodeURIComponent(q)}`);
 
-export const fetchCandles = (symbol: string, tf: Timeframe, count = 1000, before?: number) =>
+export const fetchCandles = (
+  symbol: string,
+  tf: Timeframe,
+  count = 1000,
+  before?: number,
+  cutoff?: D1Cutoff,
+) =>
   request<CandlesResponse>(
-    `/api/candles?symbol=${symbol}&tf=${tf}&count=${count}${before !== undefined ? `&before=${before}` : ''}`,
+    `/api/candles?symbol=${symbol}&tf=${tf}&count=${count}${before !== undefined ? `&before=${before}` : ''}${cutoff ? `&cutoff=${cutoff}` : ''}`,
   );
 
 /** แท่งตั้งแต่เวลา `after` ไป (replay) */
