@@ -65,6 +65,7 @@ apps/web/        React 19 + Vite + Tailwind v4 + Lightweight Charts v5
   src/settings.ts    ค่าที่จำใน localStorage (try/catch เสมอ)
 docs/rules.md    สเปกกฎการเทรด (source of truth ของ detector ทุกตัว)
 docs/roadmap.md  phase และสถานะ
+docs/backlog.md  สเปกงานและฟีเจอร์ที่วางแผนทำต่อ (TASK-01 เป็นต้นไป)
 ```
 
 ## กฎเหล็ก
