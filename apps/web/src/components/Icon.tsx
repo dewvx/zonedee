@@ -32,6 +32,12 @@ const PATHS = {
       <path d="M10 20.5h4" />
     </>
   ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m16.5 16.5 4.5 4.5" />
+    </>
+  ),
   scan: (
     <>
       <circle cx="11" cy="11" r="6.5" />

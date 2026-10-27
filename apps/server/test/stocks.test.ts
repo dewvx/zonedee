@@ -8,6 +8,9 @@ import { createScanner } from '../src/scanner';
 import { CandleStore } from '../src/store';
 import { UserSymbolStore, createSymbolRegistry } from '../src/user-symbols';
 import { WatchlistStore } from '../src/watchlist';
+import { EarningsCache } from '../src/earnings';
+import { AlertStore } from '../src/alerts/store';
+import { pickEarnings } from '../src/fetchers/yahoo';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = any;
@@ -68,6 +71,8 @@ describe('user symbols + watchlist API', () => {
   let store: CandleStore;
   let users: UserSymbolStore;
   let watch: WatchlistStore;
+  let earnings: EarningsCache;
+  let earningsCalls: string[][];
   let server: Server;
   let base: string;
 
@@ -75,12 +80,18 @@ describe('user symbols + watchlist API', () => {
     store = new CandleStore(':memory:');
     users = new UserSymbolStore(':memory:');
     watch = new WatchlistStore(':memory:');
+    earningsCalls = [];
+    earnings = new EarningsCache(':memory:', async (syms) => {
+      earningsCalls.push([...syms]);
+      return new Map(syms.map((x) => [x, x === 'SOFI' ? NOW + 5 * DAY : null]));
+    });
     const registry = createSymbolRegistry(users);
     const app = createApp({
       store,
       registry,
       userSymbols: users,
       watchlist: watch,
+      earnings,
       // จำลอง Yahoo: รู้จักแค่ SOFI กับ AAPL
       runFetch: async (cfg) => {
         if (!['SOFI', 'AAPL'].includes(cfg.symbol)) return { symbol: cfg.symbol, source: 'yahoo', total: 0, errors: ['Not Found'], durationMs: 0 };
@@ -99,6 +110,7 @@ describe('user symbols + watchlist API', () => {
     store.close();
     users.close();
     watch.close();
+    earnings.close();
   });
 
   const send = (method: string, path: string, body?: unknown) =>
@@ -127,10 +139,45 @@ describe('user symbols + watchlist API', () => {
     expect(store.latest('AAPL', 'D1', 1)).toHaveLength(1);
   });
 
+  it('watchlist มีแนวรับต้าน + เป้า % · รีเฟรชแล้วได้วันประกาศงบ (cache ไม่ดึงซ้ำ)', async () => {
+    await send('POST', '/api/watchlist', { symbol: 'SOFI', shares: 10, targetPct: 60 });
+    let rows = (await (await fetch(`${base}/api/watchlist`)).json()) as Json[];
+    expect(rows[0].targetPct).toBe(60);
+    expect(rows[0].levels.close).toBe(rows[0].metrics.close);
+    expect(Array.isArray(rows[0].levels.supports)).toBe(true);
+    expect(rows[0].earnings).toBeNull();
+    await send('POST', '/api/watchlist/refresh');
+    await send('POST', '/api/watchlist/refresh');
+    rows = (await (await fetch(`${base}/api/watchlist`)).json()) as Json[];
+    expect(rows[0].earnings).toBe(NOW + 5 * DAY);
+    expect(earningsCalls).toEqual([['SOFI']]);
+    const id = rows[0].id;
+    expect(((await (await send('PUT', `/api/watchlist/${id}`, { targetPct: 150 })).json()) as Json).targetPct).toBe(100);
+  });
+
   it('ลบหุ้นที่เพิ่มเองได้ (ถ้าไม่อยู่ใน watchlist) · ลบหุ้นหลักไม่ได้', async () => {
     await send('POST', '/api/user-symbols', { symbol: 'SOFI' });
     expect((await send('DELETE', '/api/user-symbols/AAPL')).status).toBe(400);
     expect((await send('DELETE', '/api/user-symbols/SOFI')).status).toBe(204);
     expect(store.latest('SOFI', 'D1', 5)).toEqual([]);
+  });
+});
+
+describe('วันประกาศงบ + กฎแจ้งเตือนแบบใหม่', () => {
+  it('pickEarnings เลือกวันที่เร็วสุดที่ยังไม่ผ่าน', () => {
+    const d = (t: number) => new Date(t);
+    expect(pickEarnings([d(NOW + 3 * DAY), d(NOW - 40 * DAY), undefined], NOW)).toBe(NOW + 3 * DAY);
+    expect(pickEarnings([d(NOW - 40 * DAY)], NOW)).toBeNull();
+  });
+
+  it('AlertStore รับกฎ level / earnings (earnings บังคับ D1, daysBefore 0–30)', () => {
+    const a = new AlertStore(':memory:');
+    const lv = a.createRule({ symbol: 'NVDA', tf: 'D1', kind: 'level', levelCondition: 'broke-resistance' });
+    expect(lv.name).toBe('NVDA D1 ทะลุแนวต้าน');
+    const er = a.createRule({ symbol: 'NVDA', tf: 'M5', kind: 'earnings', daysBefore: 99 });
+    expect(er.tf).toBe('D1');
+    expect(er.daysBefore).toBe(30);
+    expect(a.createRule({ symbol: 'NVDA', tf: 'D1', kind: 'level', levelCondition: 'xx' as never }).levelCondition).toBe('near-support');
+    a.close();
   });
 });

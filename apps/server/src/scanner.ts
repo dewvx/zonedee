@@ -8,11 +8,27 @@ export const SCAN_SOURCES = [
   { id: 'day_gainers', label: 'ขึ้นแรงสุดวันนี้ (Yahoo)' },
   { id: 'most_actives', label: 'ซื้อขายมากสุดวันนี้ (Yahoo)' },
   { id: 'most_shorted_stocks', label: 'โดน short เยอะ (Yahoo)' },
+  { id: 'day_losers', label: 'ลงแรงสุดวันนี้ (Yahoo)' },
+  { id: 'undervalued_large_caps', label: 'หุ้นใหญ่ราคาถูก (Yahoo)' },
+  { id: 'growth_technology_stocks', label: 'หุ้นเทคโต (Yahoo)' },
+  { id: 'popular', label: 'หุ้นใหญ่ + ETF ยอดนิยม (100 ตัว)' },
   { id: 'watchlist', label: 'หุ้นใน watchlist ของฉัน' },
   { id: 'custom', label: 'พิมพ์ ticker เอง' },
 ] as const;
 export type ScanSourceId = (typeof SCAN_SOURCES)[number]['id'];
-export type YahooScreenId = Exclude<ScanSourceId, 'watchlist' | 'custom'>;
+export type YahooScreenId = Exclude<ScanSourceId, 'watchlist' | 'custom' | 'popular'>;
+
+/** หุ้นใหญ่ US + ETF ที่คนไทยถือกันเยอะ — ไว้สแกนหาตัวที่ลงมาใกล้แนวรับ */
+export const POPULAR_US = [
+  'VOO', 'SPY', 'QQQ', 'VTI', 'SCHD', 'VT', 'IVV', 'SMH', 'SOXX', 'VUG', 'JEPI', 'TLT', 'GLD', 'ARKK',
+  'AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA', 'AVGO', 'BRK-B', 'LLY', 'JPM', 'V', 'MA', 'UNH',
+  'XOM', 'COST', 'WMT', 'HD', 'PG', 'JNJ', 'ORCL', 'NFLX', 'AMD', 'ADBE', 'CRM', 'KO', 'PEP', 'MRK',
+  'ABBV', 'BAC', 'CVX', 'TMO', 'CSCO', 'ACN', 'MCD', 'ABT', 'LIN', 'DIS', 'INTC', 'QCOM', 'TXN', 'INTU',
+  'AMAT', 'IBM', 'NOW', 'GE', 'CAT', 'UBER', 'PLTR', 'PYPL', 'SBUX', 'NKE', 'BA', 'GS', 'MS', 'BLK',
+  'AXP', 'T', 'VZ', 'PFE', 'MU', 'LRCX', 'KLAC', 'PANW', 'CRWD', 'SNOW', 'SHOP', 'ASML', 'TSM', 'BABA',
+  'PDD', 'MELI', 'SPOT', 'ABNB', 'COIN', 'XYZ', 'RBLX', 'NET', 'DDOG', 'ZS', 'ANET', 'MRVL', 'ARM', 'SMCI',
+  'HOOD', 'SOFI',
+] as const;
 
 export interface ScreenQuote {
   symbol: string;
@@ -78,6 +94,8 @@ export function createScanner(deps: ScanDeps) {
         list = [...new Set((req.symbols ?? []).map((s) => s.trim().toUpperCase()).filter((s) => TICKER_RE.test(s)))]
           .slice(0, 100)
           .map((symbol) => ({ symbol, name: symbol, marketCap: null }));
+      } else if (req.source === 'popular') {
+        list = POPULAR_US.map((symbol) => ({ symbol, name: symbol, marketCap: null }));
       } else if (req.source === 'watchlist') {
         list = deps.watchlistSymbols().map((symbol) => ({ symbol, name: symbol, marketCap: null }));
       } else {

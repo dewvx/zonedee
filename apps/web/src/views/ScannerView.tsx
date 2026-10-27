@@ -12,6 +12,8 @@ interface ScanSettings {
   options: ScanOptions;
   onlyPass: boolean;
   onlySignals: boolean;
+  /** ต้องมีสัญญาณอย่างน้อย 1 ตัวในนี้ (ว่าง = ไม่กรอง) */
+  want: ScanSignal[];
 }
 
 const KEY = 'zonedee:scanner';
@@ -22,11 +24,26 @@ const DEFAULT: ScanSettings = {
   options: SCAN_DEFAULTS,
   onlyPass: true,
   onlySignals: false,
+  want: [],
+};
+
+/** ชุดตั้งค่าสำเร็จรูป: หุ้นซิ่ง (เทรดสั้น) / หุ้นลงทุน (หาจังหวะตามแนวรับต้าน) */
+const PRESETS: Record<'momentum' | 'invest', Partial<ScanSettings>> = {
+  momentum: {
+    source: 'small_cap_gainers',
+    options: SCAN_DEFAULTS,
+    want: [],
+  },
+  invest: {
+    source: 'popular',
+    options: { ...SCAN_DEFAULTS, minPrice: 1, maxPrice: 5000, minAvgDollarVolume: 20_000_000 },
+    want: ['near-support', 'broke-resistance', 'broke-support'],
+  },
 };
 function load(): ScanSettings {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<ScanSettings>;
-    return { ...DEFAULT, ...s, options: { ...SCAN_DEFAULTS, ...s.options } };
+    return { ...DEFAULT, ...s, want: Array.isArray(s.want) ? s.want : [], options: { ...SCAN_DEFAULTS, ...s.options } };
   } catch {
     return DEFAULT;
   }
@@ -37,7 +54,11 @@ const SIGNAL_LABEL: Record<ScanSignal, { text: string; cls: string; help: string
   gap: { text: 'Gap', cls: 'bg-violet/15 text-violet', help: 'เปิดกระโดดจากราคาปิดเมื่อวาน' },
   breakout: { text: 'ทะลุกรอบ', cls: 'bg-ok/15 text-ok', help: 'ปิดเหนือ high ของ N วันก่อน' },
   bos: { text: 'BOS ขึ้น', cls: 'bg-accent/15 text-accent', help: 'เบรกโครงสร้างขาขึ้นใน 3 แท่งล่าสุด' },
+  'near-support': { text: 'ใกล้แนวรับ', cls: 'bg-accent/15 text-accent', help: 'ห่างแนวรับ D1 ไม่เกินเกณฑ์ %' },
+  'broke-resistance': { text: 'ทะลุแนวต้าน', cls: 'bg-ok/15 text-ok', help: 'ปิดเหนือแนวต้าน D1 ภายใน 3 แท่ง' },
+  'broke-support': { text: 'หลุดแนวรับ', cls: 'bg-bad/15 text-bad', help: 'ปิดใต้แนวรับ D1 ภายใน 3 แท่ง' },
 };
+const SIGNAL_ORDER: ScanSignal[] = ['volume', 'gap', 'breakout', 'bos', 'near-support', 'broke-resistance', 'broke-support'];
 
 const money = (v: number | null) =>
   v === null ? '-' : v >= 1e9 ? `${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(0)}K` : v.toFixed(0);
@@ -99,9 +120,13 @@ export default function ScannerView({ onOpenChart }: { onOpenChart?: (symbol: st
   const rows = useMemo(
     () =>
       (result?.rows ?? []).filter(
-        (r) => !r.scan || ((!s.onlyPass || r.scan.passes) && (!s.onlySignals || r.scan.signals.length > 0)),
+        (r) =>
+          !r.scan ||
+          ((!s.onlyPass || r.scan.passes) &&
+            (!s.onlySignals || r.scan.signals.length > 0) &&
+            (s.want.length === 0 || r.scan.signals.some((x) => s.want.includes(x)))),
       ),
-    [result, s.onlyPass, s.onlySignals],
+    [result, s.onlyPass, s.onlySignals, s.want],
   );
   const hidden = (result?.rows.length ?? 0) - rows.length;
   const o = s.options;
@@ -128,8 +153,16 @@ export default function ScannerView({ onOpenChart }: { onOpenChart?: (symbol: st
         }
       >
         <div>
-          <h1 className="text-[15px] font-semibold leading-tight text-fg">สแกนหุ้นซิ่ง US</h1>
-          <p className="mt-1 text-xs leading-relaxed text-muted">คัดหุ้นที่มีอะไรเกิดขึ้นวันนี้ — volume พุ่ง, gap, ทะลุกรอบ — แล้วกดดูกราฟต่อ</p>
+          <h1 className="text-[15px] font-semibold leading-tight text-fg">สแกนหุ้น US</h1>
+          <p className="mt-1 text-xs leading-relaxed text-muted">คัดหุ้นที่มีอะไรเกิดขึ้นวันนี้ — volume พุ่ง, ทะลุกรอบ, ใกล้แนวรับ — แล้วกดดูกราฟต่อ</p>
+          <div className="seg mt-3 w-full">
+            <button className="flex-1" aria-pressed={s.source !== 'popular' && s.want.length === 0} onClick={() => update(PRESETS.momentum)}>
+              หุ้นซิ่ง
+            </button>
+            <button className="flex-1" aria-pressed={s.source === 'popular'} onClick={() => update(PRESETS.invest)} title="หุ้นใหญ่ + ETF 100 ตัว หาตัวที่ใกล้แนวรับ / ทะลุแนวต้าน">
+              หุ้นลงทุน
+            </button>
+          </div>
         </div>
 
         <Section title="รายชื่อ">
@@ -147,7 +180,7 @@ export default function ScannerView({ onOpenChart }: { onOpenChart?: (symbol: st
               <textarea rows={3} value={s.custom} onChange={(e) => update({ custom: e.target.value })} className="field" />
             </Field>
           ) : (
-            s.source !== 'watchlist' && (
+            s.source !== 'watchlist' && s.source !== 'popular' && (
               <Field label="จำนวน">
                 <input type="number" min={5} max={100} value={s.count} onChange={(e) => update({ count: Math.min(100, Math.max(5, e.target.valueAsNumber || 25)) })} className="field tabular-nums" />
               </Field>
@@ -161,6 +194,23 @@ export default function ScannerView({ onOpenChart }: { onOpenChart?: (symbol: st
             {num('volLookback', 'เฉลี่ยกี่วัน')}
             {num('minGapPct', 'Gap ≥ %', 0.5)}
             {num('breakoutLookback', 'ทะลุ high กี่วัน')}
+            {num('levelNearPct', 'ใกล้แนวรับ ≤ %', 0.5, 'ห่างจากแนวรับ D1 ไม่เกินกี่ %')}
+          </div>
+          <div>
+            <span className="label">แสดงเฉพาะตัวที่มี (ไม่เลือก = ทั้งหมด)</span>
+            <div className="flex flex-wrap gap-1.5">
+              {SIGNAL_ORDER.map((sig) => (
+                <button
+                  key={sig}
+                  aria-pressed={s.want.includes(sig)}
+                  onClick={() => update({ want: s.want.includes(sig) ? s.want.filter((x) => x !== sig) : [...s.want, sig] })}
+                  className="chip"
+                  title={SIGNAL_LABEL[sig].help}
+                >
+                  {SIGNAL_LABEL[sig].text}
+                </button>
+              ))}
+            </div>
           </div>
         </Section>
 
@@ -197,14 +247,15 @@ export default function ScannerView({ onOpenChart }: { onOpenChart?: (symbol: st
         {result?.error && <Note kind="warn">{result.error}</Note>}
         {!result && !error && (
           <Empty icon="scan" title="เลือกรายชื่อแล้วกดสแกน">
-            ตัวที่คะแนนสูงคือมีหลายสัญญาณพร้อมกัน (volume พุ่ง + ทะลุกรอบ + gap) — กด "กราฟ" เพื่อดู D1 พร้อมโซนและโครงสร้าง
+            ตัวที่คะแนนสูงคือมีหลายสัญญาณพร้อมกัน — โหมด "หุ้นลงทุน" สแกนหุ้นใหญ่ + ETF ยอดนิยม 100 ตัวหาตัวที่ใกล้แนวรับหรือเพิ่งทะลุแนวต้าน
+            กด "กราฟ" เพื่อดู D1 พร้อมโซนและโครงสร้าง
           </Empty>
         )}
         {result && (
           <div className="card overflow-hidden">
             <div className="border-b border-line px-5 py-3 text-xs text-muted">
               สแกน {result.rows.length} ตัว เมื่อ {formatThaiTime(result.scannedAt, false)}
-              {hidden > 0 && ` · ซ่อน ${hidden} ตัวที่ไม่ผ่านตัวกรอง`}
+              {hidden > 0 && ` · ซ่อน ${hidden} ตัวที่ไม่ผ่านตัวกรอง/ไม่มีสัญญาณที่เลือก`}
             </div>
             <table className="table">
               <thead>
@@ -217,6 +268,7 @@ export default function ScannerView({ onOpenChart }: { onOpenChart?: (symbol: st
                   <th className="text-right">$ ต่อวัน</th>
                   <th className="text-right">Mkt cap</th>
                   <th className="text-right" title="ห่างจาก high ของ N วันก่อน">จาก high</th>
+                  <th className="pl-3" title="แนวรับ / แนวต้านใกล้สุดจาก D1 (ห่างกี่ %)">แนวรับ · ต้าน</th>
                   <th className="pl-3">สัญญาณ</th>
                   <th />
                 </tr>
@@ -237,6 +289,23 @@ export default function ScannerView({ onOpenChart }: { onOpenChart?: (symbol: st
                         <td className="text-right tabular-nums text-muted">{money(r.scan.avgDollarVolume)}</td>
                         <td className="text-right tabular-nums text-muted">{money(r.marketCap)}</td>
                         <td className="text-right tabular-nums text-muted">{pct(r.scan.fromPriorHighPct)}</td>
+                        <td className="whitespace-nowrap pl-3 text-xs tabular-nums text-muted">
+                          {r.scan.levels?.supports[0] ? (
+                            <span title={`แนวรับ ${r.scan.levels.supports[0].price.toFixed(2)}`}>
+                              <span className="text-bull">รับ</span> {pct(r.scan.levels.supports[0].distancePct)}
+                            </span>
+                          ) : (
+                            <span className="text-faint">ไม่มีรับ</span>
+                          )}
+                          <span className="mx-1.5 text-faint">·</span>
+                          {r.scan.levels?.resistances[0] ? (
+                            <span title={`แนวต้าน ${r.scan.levels.resistances[0].price.toFixed(2)}`}>
+                              <span className="text-bear">ต้าน</span> {pct(r.scan.levels.resistances[0].distancePct)}
+                            </span>
+                          ) : (
+                            <span className="text-faint">ไม่มีต้าน</span>
+                          )}
+                        </td>
                         <td className="pl-3">
                           <span className="flex flex-wrap gap-1">
                             {r.scan.signals.map((sig) => (
@@ -248,7 +317,7 @@ export default function ScannerView({ onOpenChart }: { onOpenChart?: (symbol: st
                         </td>
                       </>
                     ) : (
-                      <td colSpan={8} className="text-xs text-faint">
+                      <td colSpan={9} className="text-xs text-faint">
                         {r.error ? `ดึงข้อมูลไม่ได้: ${r.error}` : 'ข้อมูลไม่พอ'}
                       </td>
                     )}

@@ -1,4 +1,5 @@
 import type {
+  KeyLevels,
   ScanOptions,
   StockScan,
   WatchMetrics,
@@ -11,6 +12,8 @@ import type {
   ParamValue,
   Stats,
   Timeframe,
+  FundamentalData,
+  StockSummaryResult,
 } from '@zonedee/core';
 
 export type DataSourceName = 'dukascopy' | 'yahoo' | 'mt5';
@@ -57,6 +60,17 @@ export async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const fetchSymbols = () => request<SymbolSummary[]>('/api/symbols');
+
+export interface SymbolSearchResult {
+  symbol: string;
+  description: string;
+  market: Market;
+  isKnown: boolean;
+  type?: string;
+}
+
+export const searchSymbols = (q: string) =>
+  request<SymbolSearchResult[]>(`/api/symbols/search?q=${encodeURIComponent(q)}`);
 
 export const fetchCandles = (symbol: string, tf: Timeframe, count = 1000, before?: number) =>
   request<CandlesResponse>(
@@ -208,6 +222,7 @@ export const journalImageUrl = (name: string) => `/api/journal-images/${name}`;
 // ── แจ้งเตือน (Phase 9) ───────────────────────────────────────────────
 
 export type PriceCondition = 'cross-above' | 'cross-below' | 'touch';
+export type LevelCondition = 'near-support' | 'near-resistance' | 'broke-support' | 'broke-resistance';
 
 export interface AlertRule {
   id: number;
@@ -217,7 +232,7 @@ export interface AlertRule {
   enabled: boolean;
   symbol: string;
   tf: Timeframe;
-  kind: 'strategy' | 'price';
+  kind: 'strategy' | 'price' | 'level' | 'earnings';
   strategy: string;
   params: Record<string, ParamValue>;
   swingLength: number | null;
@@ -225,6 +240,8 @@ export interface AlertRule {
   condition: PriceCondition;
   price: number | null;
   once: boolean;
+  levelCondition: LevelCondition;
+  daysBefore: number;
   notifyLine: boolean;
   lastCheckedBar: number | null;
   lastFiredAt: number | null;
@@ -288,11 +305,19 @@ export interface WatchItem {
   shares: number | null;
   avgCost: number | null;
   dcaMonthly: number | null;
+  targetPct: number | null;
   note: string;
   addedAt: number;
 }
 export interface WatchRow extends WatchItem {
   metrics: WatchMetrics | null;
+  levels: KeyLevels | null;
+  /** ข้อมูลงบการเงินย่อและอัตราส่วนทางการเงิน */
+  fundamentals: FundamentalData | null;
+  /** สรุปวิเคราะห์หุ้นอัตโนมัติภาษาไทย */
+  summary: StockSummaryResult | null;
+  /** วันประกาศงบครั้งถัดไป (UTC ms) */
+  earnings: number | null;
   value: number | null;
   cost: number | null;
   pnl: number | null;
@@ -305,6 +330,15 @@ export const addWatch = (input: WatchInput) => postJson<WatchItem>('/api/watchli
 export const updateWatch = (id: number, input: WatchInput) => putJson<WatchItem>(`/api/watchlist/${id}`, input);
 export const removeWatch = (id: number) => del(`/api/watchlist/${id}`);
 export const refreshWatchlist = () => postJson<{ updated: number; errors: string[] }>('/api/watchlist/refresh', {});
+
+export interface FundamentalsResponse {
+  symbol: string;
+  fundamentals: FundamentalData | null;
+  summary: StockSummaryResult | null;
+}
+
+export const fetchFundamentals = (symbol: string) =>
+  request<FundamentalsResponse>(`/api/fundamentals?symbol=${encodeURIComponent(symbol)}`);
 
 export interface ScanSource {
   id: string;

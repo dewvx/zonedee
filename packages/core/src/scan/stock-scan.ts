@@ -2,6 +2,7 @@ import { DEFAULTS, type DetectorConfig } from '../config';
 import { sma } from '../indicators/sma';
 import { detectStructure } from '../structure/market-structure';
 import type { Candle } from '../types';
+import { keyLevels, type KeyLevels } from './key-levels';
 
 /** ค่าตั้งต้นของตัวสแกนหุ้นซิ่ง (docs/rules.md: Phase 10) */
 export const SCAN_DEFAULTS = {
@@ -19,10 +20,12 @@ export const SCAN_DEFAULTS = {
   maxPrice: 50,
   /** มูลค่าซื้อขายเฉลี่ยต่อวันขั้นต่ำ (USD) — กันหุ้นที่ไม่มีสภาพคล่อง */
   minAvgDollarVolume: 1_000_000,
+  /** ห่างจากแนวรับ/แนวต้าน (แบบง่าย) ไม่เกินกี่ % ถึงนับว่า "ใกล้" */
+  levelNearPct: 3,
 };
 export type ScanOptions = typeof SCAN_DEFAULTS;
 
-export type ScanSignal = 'volume' | 'gap' | 'breakout' | 'bos';
+export type ScanSignal = 'volume' | 'gap' | 'breakout' | 'bos' | 'near-support' | 'broke-support' | 'broke-resistance';
 
 export interface StockScan {
   lastTime: number;
@@ -41,8 +44,10 @@ export interface StockScan {
   fromPriorHighPct: number;
   bosBull: boolean;
   aboveSma50: boolean | null;
+  /** แนวรับต้านแบบง่าย (keyLevels) */
+  levels: KeyLevels | null;
   signals: ScanSignal[];
-  /** คะแนนเรียงลำดับ: volume 3 · breakout 3 · gap 2 · bos 1 (+ relVolume เป็นตัวตัดสินเสมอ) */
+  /** คะแนนเรียงลำดับ: volume 3 · breakout 3 · ทะลุแนวต้าน 3 · gap 2 · ใกล้แนวรับ 2 · bos 1 · หลุดแนวรับ 1 (+ relVolume เป็นตัวตัดสินเสมอ) */
   score: number;
   /** ผ่านตัวกรองราคา + สภาพคล่อง */
   passes: boolean;
@@ -90,7 +95,19 @@ export function scanStock(
   if (gapPct >= o.minGapPct) signals.push('gap');
   if (breakout) signals.push('breakout');
   if (bosBull) signals.push('bos');
-  const weight: Record<ScanSignal, number> = { volume: 3, breakout: 3, gap: 2, bos: 1 };
+  const levels = keyLevels(candles, { nearPct: o.levelNearPct });
+  if (levels?.brokeResistance) signals.push('broke-resistance');
+  else if (levels?.brokeSupport) signals.push('broke-support');
+  else if (levels?.nearSupport) signals.push('near-support');
+  const weight: Record<ScanSignal, number> = {
+    volume: 3,
+    breakout: 3,
+    'broke-resistance': 3,
+    gap: 2,
+    'near-support': 2,
+    bos: 1,
+    'broke-support': 1,
+  };
 
   return {
     lastTime: last.time,
@@ -107,6 +124,7 @@ export function scanStock(
     fromPriorHighPct: ((last.close - priorHigh) / priorHigh) * 100,
     bosBull,
     aboveSma50: s50 === null ? null : last.close > s50,
+    levels,
     signals,
     score: signals.reduce((a, s) => a + weight[s], 0) + Math.min(relVolume, 20) / 100,
     passes: last.close >= o.minPrice && last.close <= o.maxPrice && avgDollarVolume >= o.minAvgDollarVolume,

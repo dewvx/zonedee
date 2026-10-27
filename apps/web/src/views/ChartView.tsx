@@ -4,14 +4,19 @@ import {
   calcPosition,
   computeZones,
   detectSwings,
+  keyLevels,
+  LEVEL_STATUS_TH,
   mergeCandles,
   type Candle,
+  type FundamentalData,
+  type StockSummaryResult,
   type Timeframe,
 } from '@zonedee/core';
 import {
   createJournal,
   fetchCandles,
   fetchContract,
+  fetchFundamentals,
   fetchSymbols,
   triggerFetch,
   type CandlesResponse,
@@ -24,6 +29,8 @@ import { EMPTY_PLAN, RiskPanel, type TradePlan } from '../components/RiskPanel';
 import { snapTime, toChartTime } from '../chartTime';
 import { LayerBar } from '../components/LayerBar';
 import { ZonePanel } from '../components/ZonePanel';
+import { SymbolSearchModal } from '../components/SymbolSearchModal';
+import { StockSummaryModal } from '../components/StockSummaryModal';
 import { BO_HTF, buildOverlays, type LayerToggles } from '../overlays';
 import { formatThaiTime } from '../format';
 import { Icon } from '../components/Icon';
@@ -75,7 +82,7 @@ export interface ChartNav {
 
 export default function ChartView({ nav }: { nav?: ChartNav | null }) {
   const [settings, setSettings] = useState<Settings>(loadSettings);
-  const { symbol, tf, showEma, autoUpdate, zones: zoneSettings, layers, risk } = settings;
+  const { symbol, tf, showEma, showKeyLevels, autoUpdate, zones: zoneSettings, layers, risk } = settings;
   const update = (patch: Partial<Settings>) => setSettings((s) => ({ ...s, ...patch }));
   const updateZones = (patch: Partial<ZoneSettings>) =>
     setSettings((s) => ({ ...s, zones: { ...s.zones, ...patch } }));
@@ -93,6 +100,36 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryData, setSummaryData] = useState<{
+    fundamentals: FundamentalData | null;
+    summary: StockSummaryResult | null;
+  } | null>(null);
+
+  const openSummary = useCallback(async () => {
+    setSummaryOpen(true);
+    try {
+      const res = await fetchFundamentals(symbol);
+      setSummaryData({ fundamentals: res.fundamentals, summary: res.summary });
+    } catch (err) {
+      console.warn('fetchFundamentals error:', err);
+    }
+  }, [symbol]);
+
+  // คีย์ลัด '/' หรือ 'Ctrl+K' เปิดกล่องค้นหา symbol
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
 
   const key = `${symbol}:${tf}`;
   const keyRef = useRef(key);
@@ -372,10 +409,22 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
     }
   };
 
+  // แนวรับต้านหลัก (แบบง่าย) — ตัวเดียวกับหน้าลงทุน/ตัวสแกน
+  const levels = useMemo(() => (showKeyLevels && candles.length > 1 ? keyLevels(candles) : null), [candles, showKeyLevels]);
+  const levelLines = useMemo<ChartPriceLine[]>(() => {
+    if (!levels) return [];
+    const f = (v: number) => v.toFixed(priceDigits);
+    const p = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
+    return [
+      ...levels.resistances.map((l, k) => ({ id: `kl-r${k}`, price: l.price, color: '#e5485f', title: `ต้าน ${f(l.price)} ${p(l.distancePct)}`, dashed: true })),
+      ...levels.supports.map((l, k) => ({ id: `kl-s${k}`, price: l.price, color: '#20a874', title: `รับ ${f(l.price)} ${p(l.distancePct)}`, dashed: true })),
+    ];
+  }, [levels, priceDigits]);
+
   const accountCur = contract?.accountCurrency ?? 'USD';
   const priceLines = useMemo<ChartPriceLine[]>(() => {
-    if (!toolOpen) return [];
-    const lines: ChartPriceLine[] = [];
+    if (!toolOpen) return levelLines;
+    const lines: ChartPriceLine[] = [...levelLines];
     const fmt = (v: number) => v.toFixed(priceDigits);
     if (plan.entry !== null) {
       const lotText = position?.valid ? ` · ${position.lots} ${contract?.spec.unit === 'share' ? 'หุ้น' : 'lot'}` : '';
@@ -391,7 +440,7 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
       lines.push({ id: 'tp', price: plan.tp, color: '#20a874', title: `TP ${fmt(plan.tp)}${gain}${rr}`, draggable: true });
     }
     return lines;
-  }, [toolOpen, plan, position, priceDigits, contract, accountCur]);
+  }, [toolOpen, plan, position, priceDigits, contract, accountCur, levelLines]);
 
   // กล่องกำไร/ขาดทุนแบบ position tool ของ TradingView
   const chartOverlays = useMemo<OverlayItem[]>(() => {
@@ -423,38 +472,29 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
     <div className="flex h-full min-w-0 flex-col">
       <header className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line bg-panel px-4 py-2.5">
         {/* symbol + ราคา = จุดที่ตาไปก่อน */}
-        <div className="flex items-center gap-4">
-          <label className="group relative block cursor-pointer rounded-lg px-2 py-1 hover:bg-hover">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            className="group relative block cursor-pointer rounded-lg px-2 py-1 text-left hover:bg-hover"
+            title="ค้นหาหรือสลับ symbol (กด / หรือ Ctrl+K)"
+          >
             <span className="flex items-center gap-1.5 text-[17px] font-semibold leading-tight tracking-tight text-fg">
               {symbol}
-              <Icon name="right" size={14} className="rotate-90 text-muted group-hover:text-fg" />
+              <Icon name="search" size={14} className="text-muted group-hover:text-accent" />
             </span>
             <span className="block max-w-56 truncate text-xs leading-tight text-muted">{info?.description ?? ''}</span>
-            {/* select จริงซ้อนทับแบบโปร่งใส — ได้รายการของระบบ (เลื่อน/พิมพ์หาได้) แต่หน้าตาเป็นของเรา */}
-            <select
-              value={symbol}
-              onChange={(e) => update({ symbol: e.target.value })}
-              aria-label="เลือก symbol"
-              className="absolute inset-0 cursor-pointer opacity-0"
-            >
-              <optgroup label="Forex / ทอง">
-                {forexSymbols.map((s) => (
-                  <option key={s.symbol} value={s.symbol}>
-                    {s.symbol} — {s.description}
-                    {s.data ? '' : ' (ยังไม่มีข้อมูล)'}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="หุ้น US">
-                {stockSymbols.map((s) => (
-                  <option key={s.symbol} value={s.symbol}>
-                    {s.symbol} — {s.description}
-                    {s.data ? '' : ' (ยังไม่มีข้อมูล)'}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-          </label>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            className="hidden items-center gap-1.5 rounded-md border border-line bg-panel px-2.5 py-1 text-xs font-medium text-muted hover:border-accent hover:text-fg sm:flex"
+            title="ค้นหาหรือเพิ่ม symbol (กด / หรือ Ctrl+K)"
+          >
+            <Icon name="search" size={13} />
+            <span>ค้นหาหุ้น</span>
+            <kbd className="rounded bg-field px-1 py-0.2 font-mono text-[10px] text-faint">/</kbd>
+          </button>
           {last && info && (
             <div className="flex items-baseline gap-2.5 tabular-nums">
               <span className="text-[22px] font-semibold leading-none tracking-tight text-fg">
@@ -518,9 +558,32 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
           </span>
           EMA 9 / 21
         </button>
+        <button
+          onClick={() => update({ showKeyLevels: !showKeyLevels })}
+          aria-pressed={showKeyLevels}
+          title="แนวรับต้านหลักแบบง่าย ฝั่งละ 3 เส้น พร้อมระยะห่าง % (เหมาะกับ D1 / หุ้นลงทุน)"
+          className="chip"
+        >
+          <span className="inline-flex flex-col gap-[2px]">
+            <span className="h-px w-3 border-t border-dashed border-bear" />
+            <span className="h-px w-3 border-t border-dashed border-bull" />
+          </span>
+          แนวรับต้านหลัก
+          {levels && levels.status !== 'between' && <span className="text-[11px] text-accent">{LEVEL_STATUS_TH[levels.status]}</span>}
+        </button>
         <ZonePanel value={zoneSettings} onChange={updateZones} count={zones.length} />
         <span className="mx-1 h-5 w-px bg-line" />
         <LayerBar layers={layers} counts={visuals.counts} onToggle={toggleLayer} htfs={BO_HTF[tf] ?? []} />
+        {info?.market === 'us-stock' && (
+          <button
+            onClick={() => void openSummary()}
+            className="chip hover:border-accent"
+            title="สรุปวิเคราะห์หุ้นภาษาไทยและงบการเงินจาก Yahoo Finance"
+          >
+            <Icon name="invest" size={14} />
+            สรุปหุ้น & งบ
+          </button>
+        )}
         <button
           onClick={() => setToolOpen((o) => !o)}
           aria-pressed={toolOpen}
@@ -616,6 +679,25 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
           เวลาไทย
         </span>
       </footer>
+
+      <SymbolSearchModal
+        isOpen={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        currentSymbol={symbol}
+        symbols={symbols}
+        onSelectSymbol={(sym) => update({ symbol: sym })}
+        onSymbolAdded={async () => {
+          await refreshSymbols();
+        }}
+      />
+
+      <StockSummaryModal
+        isOpen={summaryOpen}
+        onClose={() => setSummaryOpen(false)}
+        symbol={symbol}
+        summary={summaryData?.summary ?? null}
+        fundamentals={summaryData?.fundamentals ?? null}
+      />
     </div>
   );
 }

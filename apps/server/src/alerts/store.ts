@@ -4,6 +4,9 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { getStrategy, isTimeframe, type ParamValue, type Timeframe } from '@zonedee/core';
 
 export type PriceCondition = 'cross-above' | 'cross-below' | 'touch';
+/** แนวรับต้านแบบง่าย (keyLevels): ดังตอนสถานะเปลี่ยนเข้าเงื่อนไข ไม่ดังซ้ำทุกแท่ง */
+export type LevelCondition = 'near-support' | 'near-resistance' | 'broke-support' | 'broke-resistance';
+export const LEVEL_CONDITIONS: LevelCondition[] = ['near-support', 'near-resistance', 'broke-support', 'broke-resistance'];
 
 /** กฎแจ้งเตือน 1 ข้อ */
 export interface AlertRule {
@@ -14,8 +17,11 @@ export interface AlertRule {
   enabled: boolean;
   symbol: string;
   tf: Timeframe;
-  /** strategy = เมื่อท่าเกิดสัญญาณ · price = เมื่อราคาถึงระดับ */
-  kind: 'strategy' | 'price';
+  /**
+   * strategy = เมื่อท่าเกิดสัญญาณ · price = เมื่อราคาถึงระดับ
+   * level = เข้าใกล้/หลุด/ทะลุ แนวรับต้านแบบง่าย · earnings = ก่อนวันประกาศงบ
+   */
+  kind: 'strategy' | 'price' | 'level' | 'earnings';
   strategy: string;
   params: Record<string, ParamValue>;
   swingLength: number | null;
@@ -24,9 +30,13 @@ export interface AlertRule {
   price: number | null;
   /** price: ดังครั้งเดียวแล้วปิดตัวเอง */
   once: boolean;
+  /** level: เงื่อนไข */
+  levelCondition: LevelCondition;
+  /** earnings: เตือนล่วงหน้ากี่วัน */
+  daysBefore: number;
   /** ส่งเข้า LINE ด้วย (ไม่งั้นแจ้งแค่ในแอป) */
   notifyLine: boolean;
-  /** เวลาเปิดของแท่งปิดล่าสุดที่ตรวจแล้ว (กันแจ้งซ้ำ/แจ้งย้อนหลัง) */
+  /** เวลาเปิดของแท่งปิดล่าสุดที่ตรวจแล้ว (กันแจ้งซ้ำ/แจ้งย้อนหลัง) · earnings: วันประกาศงบที่แจ้งไปแล้ว */
   lastCheckedBar: number | null;
   lastFiredAt: number | null;
   /** ตรวจรอบล่าสุดมีปัญหา (เช่นดึงข้อมูลไม่ได้) */
@@ -61,6 +71,13 @@ export class AlertError extends Error {
 }
 
 const CONDITION_TH: Record<PriceCondition, string> = { 'cross-above': 'ปิดเหนือ', 'cross-below': 'ปิดใต้', touch: 'แตะ' };
+export const LEVEL_CONDITION_TH: Record<LevelCondition, string> = {
+  'near-support': 'ใกล้แนวรับ',
+  'near-resistance': 'ใกล้แนวต้าน',
+  'broke-support': 'หลุดแนวรับ',
+  'broke-resistance': 'ทะลุแนวต้าน',
+};
+const KINDS: AlertRule['kind'][] = ['strategy', 'price', 'level', 'earnings'];
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const MAX_EVENTS = 500;
 
@@ -102,7 +119,16 @@ export class AlertStore {
   }
 
   private ruleFrom(row: Row): AlertRule {
-    return { ...(JSON.parse(row.data) as AlertRule), id: row.id, createdAt: row.created_at, updatedAt: row.updated_at };
+    // levelCondition / daysBefore มาทีหลัง — กฎเก่าไม่มี
+    const d = JSON.parse(row.data) as AlertRule;
+    return {
+      ...d,
+      levelCondition: d.levelCondition ?? 'near-support',
+      daysBefore: d.daysBefore ?? 3,
+      id: row.id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
   }
 
   rules(): AlertRule[] {
@@ -118,8 +144,10 @@ export class AlertStore {
     const m = { ...base, ...input };
     const symbol = String(m.symbol ?? '').toUpperCase();
     if (!symbol) throw new AlertError('ต้องเลือก symbol');
+    const kind: AlertRule['kind'] = KINDS.includes(m.kind as AlertRule['kind']) ? (m.kind as AlertRule['kind']) : 'strategy';
+    // วันประกาศงบไม่ขึ้นกับ TF — ใช้ D1 เสมอ
+    if (kind === 'earnings') m.tf = 'D1';
     if (typeof m.tf !== 'string' || !isTimeframe(m.tf)) throw new AlertError('TF ไม่ถูกต้อง');
-    const kind = m.kind === 'price' ? 'price' : 'strategy';
     const strategy = String(m.strategy ?? '');
     if (kind === 'strategy') {
       const st = getStrategy(strategy);
@@ -129,14 +157,29 @@ export class AlertStore {
     const price = num(m.price);
     if (kind === 'price' && price === null) throw new AlertError('ต้องใส่ราคา');
     const condition: PriceCondition = m.condition === 'cross-below' || m.condition === 'touch' ? m.condition : 'cross-above';
+    const levelCondition: LevelCondition = LEVEL_CONDITIONS.includes(m.levelCondition as LevelCondition)
+      ? (m.levelCondition as LevelCondition)
+      : 'near-support';
+    const daysBefore = Math.min(Math.max(Math.round(num(m.daysBefore) ?? 3), 0), 30);
     // เปลี่ยนเงื่อนไขสำคัญ → เริ่มนับใหม่ (ไม่แจ้งย้อนหลัง)
     const reset =
       !!base &&
-      (base.symbol !== symbol || base.tf !== m.tf || base.kind !== kind || base.strategy !== strategy || base.price !== price);
+      (base.symbol !== symbol ||
+        base.tf !== m.tf ||
+        base.kind !== kind ||
+        base.strategy !== strategy ||
+        base.price !== price ||
+        base.levelCondition !== levelCondition);
     return {
       name:
         String(m.name ?? '').slice(0, 80) ||
-        (kind === 'price' ? `${symbol} ${m.tf} ${CONDITION_TH[condition]} ${price}` : `${symbol} ${m.tf} ${getStrategy(strategy)?.name ?? strategy}`),
+        (kind === 'price'
+          ? `${symbol} ${m.tf} ${CONDITION_TH[condition]} ${price}`
+          : kind === 'level'
+            ? `${symbol} ${m.tf} ${LEVEL_CONDITION_TH[levelCondition]}`
+            : kind === 'earnings'
+              ? `${symbol} ประกาศงบ (ล่วงหน้า ${daysBefore} วัน)`
+              : `${symbol} ${m.tf} ${getStrategy(strategy)?.name ?? strategy}`),
       enabled: m.enabled !== false,
       symbol,
       tf: m.tf,
@@ -148,6 +191,8 @@ export class AlertStore {
       condition,
       price: kind === 'price' ? price : null,
       once: kind === 'price' ? m.once !== false : false,
+      levelCondition,
+      daysBefore,
       notifyLine: m.notifyLine !== false,
       lastCheckedBar: reset || (base && !base.enabled && m.enabled) ? null : num(m.lastCheckedBar),
       lastFiredAt: num(m.lastFiredAt),

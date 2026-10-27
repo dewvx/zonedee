@@ -10,7 +10,9 @@ import { fetchMt5Info } from './fetchers/mt5';
 import { createFetchRunner } from './fetch-runner';
 import { JournalStore } from './journal';
 import { CandleStore, DEFAULT_DB_PATH } from './store';
-import { fetchYahoo, yahooScreener } from './fetchers/yahoo';
+import { fetchYahoo, yahooEarnings, yahooFundamentals, yahooScreener } from './fetchers/yahoo';
+import { EarningsCache } from './earnings';
+import { FundamentalsCache } from './fundamentals';
 import { createScanner } from './scanner';
 import { UserSymbolStore, createSymbolRegistry } from './user-symbols';
 import { WatchlistStore } from './watchlist';
@@ -30,9 +32,19 @@ const scan = createScanner({
   daily: (symbol, from, to) => fetchYahoo(symbol, 'D1', from, to),
   watchlistSymbols: () => watchlist.list().map((w) => w.symbol),
 });
+const earnings = new EarningsCache(DEFAULT_DB_PATH, (symbols) => yahooEarnings(symbols));
+const fundamentals = new FundamentalsCache(DEFAULT_DB_PATH, (symbols) => yahooFundamentals(symbols));
 const line = createLineNotifier(lineConfigFromEnv());
 const alertStore = new AlertStore(DEFAULT_DB_PATH);
-const engine = createAlertEngine({ store, alerts: alertStore, line, runFetch, findSymbol: registry.find, log: console.log });
+const engine = createAlertEngine({
+  store,
+  alerts: alertStore,
+  line,
+  runFetch,
+  findSymbol: registry.find,
+  log: console.log,
+  earnings: (symbol) => earnings.ensure(symbol),
+});
 const app = createApp({
   store,
   runFetch,
@@ -44,6 +56,8 @@ const app = createApp({
   userSymbols,
   watchlist,
   scan,
+  earnings,
+  fundamentals,
 });
 engine.start(30_000);
 

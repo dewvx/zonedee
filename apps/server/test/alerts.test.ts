@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { generateSampleCandles, getStrategy, type Candle } from '@zonedee/core';
-import { closedOnly, createAlertEngine, evaluateRule, isDue } from '../src/alerts/engine';
+import { closedOnly, createAlertEngine, evaluateEarnings, evaluateRule, isDue } from '../src/alerts/engine';
 import { createLineNotifier, type LineNotifier } from '../src/alerts/line';
 import { AlertStore, type AlertRule } from '../src/alerts/store';
 import { ingest } from '../src/ingest';
@@ -28,6 +28,8 @@ const rule = (patch: Partial<AlertRule> = {}): AlertRule => ({
   condition: 'cross-above',
   price: 100,
   once: true,
+  levelCondition: 'near-support',
+  daysBefore: 3,
   notifyLine: true,
   lastCheckedBar: null,
   lastFiredAt: null,
@@ -227,5 +229,44 @@ describe('alerts API', () => {
       store.close();
       alerts.close();
     }
+  });
+});
+
+describe('evaluateRule — แนวรับต้านแบบง่าย', () => {
+  // ไซด์เวย์ 90 ↔ 110 หลายรอบ (D1) แล้วลงมาใกล้ 90 → ดังครั้งเดียวตอนเพิ่งเข้าใกล้
+  const D = 86_400_000;
+  const pts = [100, 110, 90, 110, 90, 110, 90, 110, 90, 110, 90, 100, 106];
+  const closes: number[] = [];
+  for (let k = 0; k + 1 < pts.length; k++) for (let s = 0; s < 4; s++) closes.push(pts[k]! + ((pts[k + 1]! - pts[k]!) * s) / 4);
+  closes.push(106, 101, 96, 92, 91.5, 91);
+  const data: Candle[] = closes.map((c, i) => {
+    const p = i ? closes[i - 1]! : c;
+    return { time: T0 + i * D, open: p, high: Math.max(p, c) + 0.5, low: Math.min(p, c) - 0.5, close: c, volume: 1 };
+  });
+  const r = rule({ kind: 'level', tf: 'D1', price: null, swingLength: 2, levelCondition: 'near-support' });
+
+  it('ครั้งแรกแค่จำจุดเริ่ม · แท่งใหม่ที่เพิ่งเข้าใกล้แนวรับ → ดัง 1 ครั้ง ไม่ดังซ้ำแท่งถัดไป', () => {
+    expect(evaluateRule(r, data, 2).fires).toEqual([]);
+    const from = data.at(-5)!.time; // ก่อนลงมาใกล้ 90
+    const res = evaluateRule({ ...r, lastCheckedBar: from }, data, 2);
+    expect(res.fires).toHaveLength(1);
+    expect(res.fires[0]!.message).toContain('ใกล้แนวรับ');
+    expect(res.fires[0]!.message).toContain('แนวรับ');
+  });
+});
+
+describe('evaluateEarnings', () => {
+  const D = 86_400_000;
+  const now = Date.UTC(2026, 9, 18);
+  const r = rule({ kind: 'earnings', tf: 'D1', price: null, daysBefore: 3, lastCheckedBar: null });
+  it('เหลือ ≤ 3 วัน → ดัง · แจ้งวันนี้ไปแล้ว → ไม่ซ้ำ · ยังอีกนาน / ผ่านไปแล้ว → เงียบ', () => {
+    const e = now + 2 * D;
+    const f = evaluateEarnings(r, e, now)!;
+    expect(f.message).toContain('อีก 2 วัน');
+    expect(f.barTime).toBe(e);
+    expect(evaluateEarnings({ ...r, lastCheckedBar: e }, e, now)).toBeNull();
+    expect(evaluateEarnings(r, now + 10 * D, now)).toBeNull();
+    expect(evaluateEarnings(r, now - 3 * D, now)).toBeNull();
+    expect(evaluateEarnings(r, null, now)).toBeNull();
   });
 });

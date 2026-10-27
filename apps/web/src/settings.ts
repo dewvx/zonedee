@@ -40,6 +40,8 @@ export interface Settings {
   symbol: string;
   tf: Timeframe;
   showEma: boolean;
+  /** เส้นแนวรับต้านหลัก (แบบง่าย ฝั่งละ 3 เส้น) */
+  showKeyLevels: boolean;
   autoUpdate: boolean;
   zones: ZoneSettings;
   layers: LayerToggles;
@@ -61,6 +63,7 @@ export const DEFAULT_SETTINGS: Settings = {
   symbol: 'XAUUSD',
   tf: 'M15',
   showEma: true,
+  showKeyLevels: false,
   autoUpdate: false,
   zones: DEFAULT_ZONE_SETTINGS,
   layers: DEFAULT_LAYERS,
@@ -88,6 +91,7 @@ export function loadSettings(): Settings {
       symbol: typeof s.symbol === 'string' ? s.symbol : DEFAULT_SETTINGS.symbol,
       tf: typeof s.tf === 'string' && isTimeframe(s.tf) ? s.tf : DEFAULT_SETTINGS.tf,
       showEma: bool(s.showEma, DEFAULT_SETTINGS.showEma),
+      showKeyLevels: bool(s.showKeyLevels, DEFAULT_SETTINGS.showKeyLevels),
       autoUpdate: bool(s.autoUpdate, DEFAULT_SETTINGS.autoUpdate),
       zones: {
         show: bool(z.show, dz.show),

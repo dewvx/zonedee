@@ -1,5 +1,5 @@
 import YahooFinance from 'yahoo-finance2';
-import { TIMEFRAME_MS, bucketStart, type Candle, type Timeframe } from '@zonedee/core';
+import { TIMEFRAME_MS, bucketStart, type Candle, type FundamentalData, type Timeframe } from '@zonedee/core';
 
 export interface YahooQuote {
   date: Date;
@@ -63,7 +63,15 @@ export async function fetchYahoo(symbol: string, tf: Timeframe, from: Date, to: 
 
 /** รายชื่อหุ้นจาก screener สำเร็จรูปของ Yahoo (เช่น small_cap_gainers) */
 export async function yahooScreener(
-  id: 'small_cap_gainers' | 'aggressive_small_caps' | 'day_gainers' | 'most_actives' | 'most_shorted_stocks',
+  id:
+    | 'small_cap_gainers'
+    | 'aggressive_small_caps'
+    | 'day_gainers'
+    | 'day_losers'
+    | 'most_actives'
+    | 'most_shorted_stocks'
+    | 'undervalued_large_caps'
+    | 'growth_technology_stocks',
   count: number,
 ): Promise<{ symbol: string; name: string; marketCap: number | null }[]> {
   client ??= new YahooFinance({ suppressNotices: ['yahooSurvey'] });
@@ -73,4 +81,143 @@ export async function yahooScreener(
     name: q.shortName ?? q.longName ?? q.symbol,
     marketCap: typeof q.marketCap === 'number' ? q.marketCap : null,
   }));
+}
+
+/**
+ * วันประกาศงบครั้งถัดไปจาก quote ของ Yahoo (ค่าประมาณ อาจคลาด ±2 วัน)
+ * เลือกวันที่เร็วสุดที่ยังไม่ผ่านไปเกิน 1 วัน จาก earningsTimestampStart / earningsTimestamp / earningsTimestampEnd
+ */
+export async function yahooEarnings(symbols: readonly string[], now = Date.now()): Promise<Map<string, number | null>> {
+  client ??= new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+  const out = new Map<string, number | null>();
+  if (symbols.length === 0) return out;
+  const quotes = await client.quote([...symbols], {
+    fields: ['symbol', 'earningsTimestamp', 'earningsTimestampStart', 'earningsTimestampEnd'],
+  });
+  for (const q of quotes) {
+    const r = q as { symbol: string; earningsTimestamp?: Date; earningsTimestampStart?: Date; earningsTimestampEnd?: Date };
+    out.set(r.symbol, pickEarnings([r.earningsTimestampStart, r.earningsTimestamp, r.earningsTimestampEnd], now));
+  }
+  for (const s of symbols) if (!out.has(s)) out.set(s, null);
+  return out;
+}
+
+export function pickEarnings(dates: readonly (Date | undefined)[], now: number): number | null {
+  const ts = dates
+    .map((d) => (d instanceof Date ? d.getTime() : NaN))
+    .filter((t) => Number.isFinite(t) && t >= now - 86_400_000)
+    .sort((a, b) => a - b);
+  return ts[0] ?? null;
+}
+
+export interface YahooSearchResult {
+  symbol: string;
+  name: string;
+  type?: string;
+  exchange?: string;
+}
+
+/** ค้นหาหุ้น/ETF จาก Yahoo Finance search */
+export async function searchYahoo(query: string, count = 8): Promise<YahooSearchResult[]> {
+  client ??= new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+  const res = await client.search(query, { quotesCount: count, newsCount: 0 });
+  const results: YahooSearchResult[] = [];
+  for (const item of res.quotes ?? []) {
+    const q = item as { symbol?: string; quoteType?: string; shortname?: string; longname?: string; exchange?: string };
+    const sym = q.symbol?.toUpperCase();
+    if (!sym) continue;
+    if (q.quoteType === 'EQUITY' || q.quoteType === 'ETF') {
+      results.push({
+        symbol: sym,
+        name: q.shortname || q.longname || sym,
+        type: q.quoteType,
+        exchange: q.exchange,
+      });
+    }
+  }
+  return results;
+}
+
+/**
+ * ดึงข้อมูลงบการเงินย่อและอัตราส่วนทางการเงินจาก Yahoo Finance
+ * (P/E, Forward P/E, PEG, P/B, ROE, รายได้, อัตรากำไร, หนี้สิน, เงินปันผล)
+ */
+export async function yahooFundamentals(symbols: readonly string[]): Promise<Map<string, FundamentalData>> {
+  client ??= new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+  const out = new Map<string, FundamentalData>();
+  if (symbols.length === 0) return out;
+
+  const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+  // 1. ดึง Valuation เบื้องต้นแบบ Bulk (รวดเร็ว 1 request ได้ครบทุกตัว)
+  try {
+    const quotes = await client.quote([...symbols], {
+      fields: [
+        'symbol',
+        'trailingPE',
+        'forwardPE',
+        'priceToBook',
+        'trailingAnnualDividendYield',
+        'dividendYield',
+        'marketCap',
+        'epsTrailingTwelveMonths',
+      ],
+    });
+
+    for (const item of quotes) {
+      const q = item as {
+        symbol?: string;
+        trailingPE?: number;
+        forwardPE?: number;
+        priceToBook?: number;
+        dividendYield?: number;
+        trailingAnnualDividendYield?: number;
+      };
+      const sym = q.symbol?.toUpperCase();
+      if (!sym) continue;
+      out.set(sym, {
+        pe: numOrNull(q.trailingPE),
+        forwardPe: numOrNull(q.forwardPE),
+        pb: numOrNull(q.priceToBook),
+        dividendYield: numOrNull(q.dividendYield ?? q.trailingAnnualDividendYield),
+      });
+    }
+  } catch (err) {
+    console.warn('yahoo quote fundamentals error:', (err as Error).message);
+  }
+
+  // 2. ดึงรายละเอียดลึก (financialData + defaultKeyStatistics) ทีละตัว
+  for (const sym of symbols) {
+    const sUpper = sym.toUpperCase();
+    try {
+      const summary = await client.quoteSummary(sym, {
+        modules: ['financialData', 'defaultKeyStatistics'],
+      });
+      const fin = summary.financialData as Record<string, unknown> | undefined;
+      const stats = summary.defaultKeyStatistics as Record<string, unknown> | undefined;
+      const prev = out.get(sUpper) ?? {};
+
+      out.set(sUpper, {
+        ...prev,
+        pe: prev.pe ?? numOrNull(stats?.trailingPE),
+        forwardPe: prev.forwardPe ?? numOrNull(stats?.forwardPE),
+        pegRatio: numOrNull(stats?.pegRatio),
+        pb: prev.pb ?? numOrNull(stats?.priceToBook),
+        roe: numOrNull(fin?.returnOnEquity),
+        revenue: numOrNull(fin?.totalRevenue),
+        revenueGrowth: numOrNull(fin?.revenueGrowth),
+        profitMargin: numOrNull(fin?.profitMargins),
+        debtToEquity: numOrNull(fin?.debtToEquity),
+        targetMeanPrice: numOrNull(fin?.targetMeanPrice),
+      });
+    } catch {
+      // ถ้าไม่มี module financialData ให้เก็บข้อมูลจาก bulk quote ต่อไป
+    }
+  }
+
+  for (const s of symbols) {
+    const sUpper = s.toUpperCase();
+    if (!out.has(sUpper)) out.set(sUpper, {});
+  }
+  return out;
 }

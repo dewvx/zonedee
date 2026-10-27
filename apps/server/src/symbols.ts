@@ -44,7 +44,7 @@ export interface SymbolConfig extends SymbolInfo {
 }
 
 const FOREX_TFS: Timeframe[] = ['M1', 'M5', 'M10', 'M15', 'M30', 'H1', 'H2', 'H4', 'D1', 'W1'];
-const STOCK_TFS: Timeframe[] = ['D1', 'W1'];
+const STOCK_TFS: Timeframe[] = ['H1', 'H4', 'D1', 'W1'];
 
 const NATIVES: Record<DataSource | 'yahoo-stock', NativeSeries[]> = {
   // Yahoo intraday: 1m ได้ ~30 วัน (ทีละ 7 วัน), 5m ~60 วัน, 1h ~730 วัน
@@ -53,7 +53,10 @@ const NATIVES: Record<DataSource | 'yahoo-stock', NativeSeries[]> = {
     { tf: 'M5', maxDays: 59, chunkDays: 59 },
     { tf: 'H1', maxDays: 729, chunkDays: 729 },
   ],
-  'yahoo-stock': [{ tf: 'D1', maxDays: 365 * 30, chunkDays: 365 * 30 }],
+  'yahoo-stock': [
+    { tf: 'H1', maxDays: 729, chunkDays: 729 },
+    { tf: 'D1', maxDays: 365 * 30, chunkDays: 365 * 30 },
+  ],
   mt5: [{ tf: 'M1', maxDays: 365 * 20, chunkDays: 30 }],
   dukascopy: [{ tf: 'M1', maxDays: 365 * 20, chunkDays: 7 }],
 };
@@ -90,7 +93,7 @@ export const usStock = (symbol: string, description: string, samplePrice: number
   sourceSymbol: symbol,
   natives: NATIVES['yahoo-stock'],
   timeframes: STOCK_TFS,
-  defaultHistoryDays: 365 * 5,
+  defaultHistoryDays: 365 * 20,
   samplePrice,
 });
 

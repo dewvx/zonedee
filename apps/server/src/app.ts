@@ -1,5 +1,13 @@
 import express from 'express';
-import { TIMEFRAME_MS, generateSampleCandles, isTimeframe, seedFromString } from '@zonedee/core';
+import {
+  TIMEFRAME_MS,
+  generateSampleCandles,
+  isTimeframe,
+  keyLevels,
+  seedFromString,
+  summarizeStock,
+  watchMetrics,
+} from '@zonedee/core';
 import { BacktestError, backtestCompare, backtestOne, strategyList, type BacktestRequest } from './backtest';
 import type { ContractInfo } from './contract';
 import { JournalError, type JournalInput, type JournalStore } from './journal';
@@ -9,9 +17,12 @@ import { AlertError, type AlertRuleInput, type AlertStore } from './alerts/store
 import type { FetchOptions } from './fetch-job';
 import type { RunResult } from './fetch-runner';
 import type { CandleStore } from './store';
-import { SCAN_SOURCES, type ScanRequest, type ScanResponse } from './scanner';
+import { POPULAR_US, SCAN_SOURCES, type ScanRequest, type ScanResponse } from './scanner';
+import { searchYahoo } from './fetchers';
 import { SYMBOLS, findSymbol, type SymbolConfig } from './symbols';
 import { TICKER_RE, type SymbolRegistry, type UserSymbolStore } from './user-symbols';
+import type { EarningsCache } from './earnings';
+import type { FundamentalsCache } from './fundamentals';
 import { watchRows, type WatchInput, type WatchlistStore } from './watchlist';
 
 export interface AppDeps {
@@ -33,10 +44,28 @@ export interface AppDeps {
   watchlist?: WatchlistStore;
   /** ตัวสแกนหุ้นซิ่ง (Phase 10) */
   scan?: (req: ScanRequest) => Promise<ScanResponse>;
+  /** วันประกาศงบ (หน้าลงทุน + แจ้งเตือน) */
+  earnings?: EarningsCache;
+  /** ข้อมูลงบการเงินย่อและอัตราส่วนทางการเงิน */
+  fundamentals?: FundamentalsCache;
 }
 
 export function createApp(deps: AppDeps) {
-  const { store, runFetch, getContract, dbPath, symbols = SYMBOLS, journal, alerts, registry, userSymbols, watchlist, scan } = deps;
+  const {
+    store,
+    runFetch,
+    getContract,
+    dbPath,
+    symbols = SYMBOLS,
+    journal,
+    alerts,
+    registry,
+    userSymbols,
+    watchlist,
+    scan,
+    earnings,
+    fundamentals,
+  } = deps;
   const app = express();
   // รูปกราฟใน journal ส่งมาเป็น data URL → เผื่อขนาดไว้
   app.use(express.json({ limit: '15mb' }));
@@ -76,6 +105,79 @@ export function createApp(deps: AppDeps) {
         };
       }),
     );
+  });
+
+  /**
+   * GET /api/symbols/search?q=<query>
+   * ค้นหา symbol จาก:
+   * 1. Symbol ที่มีอยู่ในระบบแล้ว (ทั้งหลักและที่เพิ่มเอง)
+   * 2. หุ้น US ยอดนิยม (POPULAR_US)
+   * 3. ผลค้นหาจาก Yahoo Finance search (กรณีพิมพ์ตัวย่อหรือชื่อบริษัท)
+   */
+  app.get('/api/symbols/search', async (req, res) => {
+    const q = String(req.query.q ?? '').trim();
+    if (!q) {
+      res.json([]);
+      return;
+    }
+    const qUpper = q.toUpperCase();
+    const results: Array<{
+      symbol: string;
+      description: string;
+      market: 'forex' | 'us-stock';
+      isKnown: boolean;
+      type?: string;
+    }> = [];
+    const seen = new Set<string>();
+
+    // 1. ค้นใน symbol ที่ระบบมีอยู่แล้ว
+    for (const s of listSymbols()) {
+      if (s.symbol.includes(qUpper) || s.description.toLowerCase().includes(q.toLowerCase())) {
+        seen.add(s.symbol);
+        results.push({
+          symbol: s.symbol,
+          description: s.description,
+          market: s.market,
+          isKnown: true,
+        });
+      }
+    }
+
+    // 2. ค้นใน POPULAR_US (100 หุ้นใหญ่ยอดนิยม)
+    for (const sym of POPULAR_US) {
+      if (!seen.has(sym) && sym.includes(qUpper)) {
+        seen.add(sym);
+        results.push({
+          symbol: sym,
+          description: sym,
+          market: 'us-stock',
+          isKnown: false,
+        });
+      }
+    }
+
+    // 3. ค้นจาก Yahoo Finance (ถ้า q ยาว >= 2 ตัวอักษร)
+    if (q.length >= 2) {
+      try {
+        const yResults = await searchYahoo(q, 8);
+        for (const item of yResults) {
+          if (!seen.has(item.symbol)) {
+            seen.add(item.symbol);
+            results.push({
+              symbol: item.symbol,
+              description: item.name,
+              market: 'us-stock',
+              isKnown: false,
+              type: item.type,
+            });
+          }
+        }
+      } catch {
+        // ออฟไลน์หรือมีปัญหาเครือข่าย ให้ข้าม Yahoo search
+      }
+    }
+
+    res.json(results.slice(0, 25));
   });
 
   /**
@@ -332,7 +434,18 @@ export function createApp(deps: AppDeps) {
     res.status(204).end();
   });
 
-  app.get('/api/watchlist', (_req, res) => res.json(watchlist ? watchRows(watchlist.list(), store) : []));
+  app.get('/api/watchlist', (_req, res) =>
+    res.json(
+      watchlist
+        ? watchRows(
+            watchlist.list(),
+            store,
+            (s) => earnings?.get(s) ?? null,
+            (s) => fundamentals?.get(s) ?? null,
+          )
+        : [],
+    ),
+  );
   app.post('/api/watchlist', async (req, res) => {
     if (!watchlist) return fail(res, new Error('ไม่ได้เปิดใช้ watchlist'), 501);
     try {
@@ -359,11 +472,18 @@ export function createApp(deps: AppDeps) {
     watchlist?.remove(Number(req.params.id));
     res.status(204).end();
   });
-  /** ดึงราคาใหม่ของหุ้นทุกตัวใน watchlist (Yahoo D1) */
+  /** ดึงราคาใหม่ของหุ้นทุกตัวใน watchlist (Yahoo D1) + วันประกาศงบ + งบการเงิน */
   app.post('/api/watchlist/refresh', async (_req, res) => {
     const errors: string[] = [];
     let updated = 0;
-    for (const w of watchlist?.list() ?? []) {
+    const items = watchlist?.list() ?? [];
+    if (earnings && items.length) {
+      await earnings.refresh(items.map((w) => w.symbol)).catch((e: Error) => errors.push(`วันประกาศงบ: ${e.message}`));
+    }
+    if (fundamentals && items.length) {
+      await fundamentals.refresh(items.map((w) => w.symbol)).catch((e: Error) => errors.push(`งบการเงิน: ${e.message}`));
+    }
+    for (const w of items) {
       const cfg = find(w.symbol);
       if (!cfg) continue;
       try {
@@ -375,6 +495,34 @@ export function createApp(deps: AppDeps) {
       }
     }
     res.json({ updated, errors });
+  });
+
+  /** GET /api/fundamentals?symbol=AAPL — ข้อมูลงบการเงินย่อและสรุปวิเคราะห์ */
+  app.get('/api/fundamentals', async (req, res) => {
+    const symbol = String(req.query.symbol ?? '').toUpperCase();
+    if (!symbol) {
+      res.status(400).json({ error: 'ต้องระบุ symbol' });
+      return;
+    }
+    const data = fundamentals ? await fundamentals.ensure(symbol).catch(() => null) : null;
+    const candles = store.latest(symbol, 'D1', 600);
+    const metrics = watchMetrics(candles);
+    const levels = keyLevels(candles);
+    const earningsTime = earnings?.get(symbol) ?? null;
+    const earningsDaysLeft =
+      earningsTime !== null ? Math.ceil((earningsTime - Date.now()) / (24 * 3_600_000)) : null;
+
+    const summary = metrics
+      ? summarizeStock({
+          symbol,
+          metrics,
+          levels,
+          fundamentals: data,
+          earningsDaysLeft,
+        })
+      : null;
+
+    res.json({ symbol, fundamentals: data, summary });
   });
 
   app.get('/api/scan/sources', (_req, res) => res.json(SCAN_SOURCES));

@@ -18,6 +18,7 @@ import {
   type AlertRule,
   type AlertRuleInput,
   type AlertStatus,
+  type LevelCondition,
   type StrategyInfo,
   type SymbolSummary,
 } from '../api';
@@ -34,6 +35,18 @@ const LINE_BADGE: Record<AlertEvent['line'], { text: string; cls: string }> = {
   off: { text: 'ในแอปเท่านั้น', cls: 'bg-hover text-muted' },
 };
 const CONDITION_LABEL = { 'cross-above': 'ปิดเหนือ', 'cross-below': 'ปิดใต้', touch: 'แตะ' } as const;
+const LEVEL_LABEL: Record<LevelCondition, string> = {
+  'near-support': 'ราคาลงมาใกล้แนวรับ',
+  'near-resistance': 'ราคาขึ้นมาใกล้แนวต้าน',
+  'broke-support': 'ปิดหลุดแนวรับ',
+  'broke-resistance': 'ปิดทะลุแนวต้าน',
+};
+const KIND_TABS = [
+  ['strategy', 'ท่าเทรด'],
+  ['price', 'ราคา'],
+  ['level', 'แนวรับต้าน'],
+  ['earnings', 'วันงบ'],
+] as const;
 
 const EMPTY_RULE: AlertRuleInput = {
   kind: 'strategy',
@@ -44,6 +57,8 @@ const EMPTY_RULE: AlertRuleInput = {
   condition: 'cross-above',
   price: null,
   once: true,
+  levelCondition: 'near-support',
+  daysBefore: 3,
   notifyLine: true,
   name: '',
 };
@@ -194,17 +209,24 @@ export default function AlertsView({ onEventsSeen }: { onEventsSeen?: (lastId: n
         <section className="w-[28rem] shrink-0 space-y-3 overflow-y-auto border-r border-line p-5">
           {editing && d && (
             <div className="card space-y-3 border-accent/40 p-5">
-              <div className="seg flex w-full">
-                {(
-                  [
-                    ['strategy', 'เมื่อท่าเกิดสัญญาณ'],
-                    ['price', 'เมื่อราคาถึงระดับ'],
-                  ] as const
-                ).map(([k, label]) => (
-                  <button key={k} onClick={() => setDraft({ kind: k })} className={`flex-1 py-1 ${d.kind === k ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover'}`}>
-                    {label}
-                  </button>
-                ))}
+              <div>
+                <span className="label">เตือนเมื่อ</span>
+                <div className="seg flex w-full">
+                  {KIND_TABS.map(([k, label]) => (
+                    <button
+                      key={k}
+                      aria-pressed={d.kind === k}
+                      onClick={() => {
+                        // แนวรับต้าน / วันงบ ใช้กับกราฟรายวันเป็นหลัก
+                        const daily = (k === 'level' || k === 'earnings') && (info?.timeframes ?? []).includes('D1');
+                        setDraft({ kind: k, ...(daily ? { tf: 'D1' as Timeframe } : {}) });
+                      }}
+                      className="flex-1"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <label className="block">
@@ -215,16 +237,54 @@ export default function AlertsView({ onEventsSeen }: { onEventsSeen?: (lastId: n
                     ))}
                   </select>
                 </label>
-                <label className="block">
-                  <span className="label">TF</span>
-                  <select value={d.tf} onChange={(e) => setDraft({ tf: e.target.value as Timeframe })} className="field">
-                    {(info?.timeframes ?? [d.tf!]).map((t) => (
-                      <option key={t}>{t}</option>
-                    ))}
-                  </select>
-                </label>
+                {d.kind === 'earnings' ? (
+                  <label className="block">
+                    <span className="label">เตือนล่วงหน้า (วัน)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={30}
+                      value={d.daysBefore ?? 3}
+                      onChange={(e) => setDraft({ daysBefore: e.target.valueAsNumber || 0 })}
+                      className="field tabular-nums"
+                    />
+                  </label>
+                ) : (
+                  <label className="block">
+                    <span className="label">TF</span>
+                    <select value={d.tf} onChange={(e) => setDraft({ tf: e.target.value as Timeframe })} className="field">
+                      {(info?.timeframes ?? [d.tf!]).map((t) => (
+                        <option key={t}>{t}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
               </div>
-              {d.kind === 'strategy' ? (
+              {d.kind === 'earnings' ? (
+                <p className="text-xs leading-relaxed text-muted">
+                  {info && info.market !== 'us-stock' ? (
+                    <span className="text-warn">วันประกาศงบมีเฉพาะหุ้น US — เลือกหุ้นก่อน</span>
+                  ) : (
+                    'เตือนครั้งเดียวต่อรอบประกาศงบ วันที่ประมาณจาก Yahoo (อาจคลาด ±2 วัน) — ราคามักแกว่งแรงช่วงนี้'
+                  )}
+                </p>
+              ) : d.kind === 'level' ? (
+                <>
+                  <label className="block">
+                    <span className="label">เงื่อนไข</span>
+                    <select value={d.levelCondition} onChange={(e) => setDraft({ levelCondition: e.target.value as LevelCondition })} className="field">
+                      {(Object.keys(LEVEL_LABEL) as LevelCondition[]).map((k) => (
+                        <option key={k} value={k}>
+                          {LEVEL_LABEL[k]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="text-xs leading-relaxed text-muted">
+                    ใช้แนวรับต้านแบบง่ายตัวเดียวกับหน้าลงทุน ("ใกล้" = ห่างไม่เกิน 3%) · เตือนตอนเพิ่งเข้าเงื่อนไข ไม่เตือนซ้ำทุกแท่ง · แนะนำ D1
+                  </p>
+                </>
+              ) : d.kind === 'strategy' ? (
                 <>
                   <label className="block">
                     <span className="label">ท่า</span>
@@ -325,11 +385,21 @@ export default function AlertsView({ onEventsSeen }: { onEventsSeen?: (lastId: n
                   </div>
                 </div>
                 <div className="mt-2 text-[13px] text-fg-2">
-                  {r.symbol} {r.tf} —{' '}
-                  {r.kind === 'strategy' ? strategyName(r.strategy) : `${CONDITION_LABEL[r.condition]} ${r.price}${r.once ? ' (ครั้งเดียว)' : ''}`}
+                  {r.kind === 'earnings' ? r.symbol : `${r.symbol} ${r.tf}`} —{' '}
+                  {r.kind === 'strategy'
+                    ? strategyName(r.strategy)
+                    : r.kind === 'level'
+                      ? LEVEL_LABEL[r.levelCondition]
+                      : r.kind === 'earnings'
+                        ? `ก่อนประกาศงบ ${r.daysBefore} วัน`
+                        : `${CONDITION_LABEL[r.condition]} ${r.price}${r.once ? ' (ครั้งเดียว)' : ''}`}
                 </div>
                 <div className="mt-0.5 text-[11px] text-faint">
-                  ตรวจถึงแท่ง {r.lastCheckedBar ? formatThaiTime(r.lastCheckedBar, false) : '— (รอแท่งปิด)'}
+                  {r.kind === 'earnings'
+                    ? r.lastCheckedBar
+                      ? `เตือนรอบงบ ${formatThaiTime(r.lastCheckedBar, false)} แล้ว`
+                      : 'รอใกล้วันประกาศงบ'
+                    : `ตรวจถึงแท่ง ${r.lastCheckedBar ? formatThaiTime(r.lastCheckedBar, false) : '— (รอแท่งปิด)'}`}
                   {r.lastFiredAt ? ` · เตือนล่าสุด ${formatThaiTime(r.lastFiredAt, false)}` : ''}
                 </div>
                 {r.lastError && <div className="mt-1 text-[11px] text-warn">{r.lastError}</div>}

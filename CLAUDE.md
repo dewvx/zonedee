@@ -27,7 +27,8 @@ packages/core/   ฟังก์ชันล้วน: types, indicators, struct
   src/backtest/      engine (simulate), stats, baseline (เทียบเข้าสุ่ม), run (รวมทุกอย่าง)
   src/strategies/    ท่าเทรด — 1 ไฟล์ต่อท่า + common.ts (params ร่วม, ltfConfirm) + index.ts (STRATEGIES)
   src/mtf.ts         htfView: แท่ง TF ใหญ่ + ใช้ได้ตั้งแต่แท่ง TF เล็กไหน (กันแอบดูอนาคต)
-  src/scan/          scanStock (หุ้นซิ่ง D1), watchMetrics (watchlist ลงทุน)
+  src/scan/          scanStock (หุ้นซิ่ง D1), watchMetrics (watchlist ลงทุน), keyLevels (แนวรับต้านแบบง่าย),
+                     rebalance (จัดพอร์ตตามเป้า %)
 apps/server/     Express 5 — API + ดึง/เก็บข้อมูล
   src/app.ts         routes ทั้งหมด: symbols, candles (before/after), fetch, contract, strategies, backtest,
                      journal, alerts, user-symbols, watchlist, scan
@@ -35,8 +36,10 @@ apps/server/     Express 5 — API + ดึง/เก็บข้อมูล
   src/backtest-cli.ts npm run backtest
   src/journal.ts     Journal (ตาราง journal + รูปใน data/journal/)
   src/alerts/        แจ้งเตือน: store (กฎ/เหตุการณ์), engine (ตรวจทุก 30 วิ เมื่อแท่งปิด), line (Messaging API)
-  src/scanner.ts     สแกนหุ้นซิ่ง (Yahoo screener + D1 cache 10 นาที)
-  src/watchlist.ts   watchlist ลงทุน + ตัวเลขพอร์ต
+                     กฎ 4 แบบ: strategy, price, level (แนวรับต้าน), earnings (วันประกาศงบ)
+  src/scanner.ts     สแกนหุ้น (Yahoo screener / หุ้นยอดนิยม 100 ตัว + D1 cache 10 นาที)
+  src/watchlist.ts   watchlist ลงทุน + ตัวเลขพอร์ต + แนวรับต้าน + เป้า %
+  src/earnings.ts    cache วันประกาศงบ (Yahoo quote, 12 ชม.)
   src/user-symbols.ts หุ้น US ที่ผู้ใช้เพิ่มเอง + registry (รายการหลัก + ที่เพิ่ม)
   src/fetch-runner.ts สั่งดึงจากในแอป (กันดึงซ้ำ symbol เดียวกัน)
   src/contract.ts    สเปกสัญญาสำหรับเครื่องคิด lot (MT5 --info, cache 1 นาที / ค่ามาตรฐาน XM)

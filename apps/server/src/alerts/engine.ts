@@ -1,7 +1,10 @@
 import {
+  LEVEL_STATUS_TH,
   TIMEFRAME_MS,
   getStrategy,
   isBucketClosed,
+  keyLevels,
+  type KeyLevels,
   type Candle,
   type Signal,
 } from '@zonedee/core';
@@ -9,7 +12,7 @@ import type { RunResult } from '../fetch-runner';
 import type { CandleStore } from '../store';
 import type { SymbolConfig } from '../symbols';
 import type { LineNotifier } from './line';
-import type { AlertEvent, AlertRule, AlertStore } from './store';
+import { LEVEL_CONDITION_TH, type AlertEvent, type AlertRule, type AlertStore, type LevelCondition } from './store';
 
 /** แท่งที่ใช้คำนวณต่อรอบ (พอสำหรับท่า 2 TF เช่น M15 → H4 ≈ 375 แท่ง H4) */
 const BARS_PER_CHECK = 6000;
@@ -48,6 +51,49 @@ function signalMessage(rule: AlertRule, name: string, s: Signal, barTime: number
   ].join('\n');
 }
 
+function levelMessage(rule: AlertRule, lv: KeyLevels, digits: number): string {
+  const f = (v: number) => v.toFixed(digits);
+  const pct = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
+  const s = lv.supports[0];
+  const r = lv.resistances[0];
+  const broke = rule.levelCondition === 'broke-support' ? lv.brokeSupport : rule.levelCondition === 'broke-resistance' ? lv.brokeResistance : null;
+  return [
+    `🔔 ${LEVEL_CONDITION_TH[rule.levelCondition]}`,
+    `${rule.symbol} ${rule.tf} · ปิด ${f(lv.close)}`,
+    broke ? `ระดับ ${f(broke.price)}` : null,
+    s ? `แนวรับ ${f(s.price)} (${pct(s.distancePct)})` : 'ไม่มีแนวรับใต้ราคา',
+    r ? `แนวต้าน ${f(r.price)} (${pct(r.distancePct)})` : 'ไม่มีแนวต้านเหนือราคา',
+    `สถานะ: ${LEVEL_STATUS_TH[lv.status]}`,
+    `แท่ง ${thaiTime(lv.time)} (เวลาไทย)`,
+  ]
+    .filter((x): x is string => x !== null)
+    .join('\n');
+}
+
+const DAY_MS = 86_400_000;
+const thaiDate = (ms: number) =>
+  new Date(ms).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'short', day: 'numeric', month: 'short' });
+
+/**
+ * กฎวันประกาศงบ: ดังครั้งเดียวต่อวันประกาศ เมื่อเหลือ ≤ daysBefore วัน (และวันประกาศยังไม่ผ่านไปเกิน 1 วัน)
+ * lastCheckedBar ของกฎนี้ = วันประกาศที่แจ้งไปแล้ว
+ */
+export function evaluateEarnings(rule: AlertRule, earnings: number | null, now: number): Fire | null {
+  if (earnings === null || rule.lastCheckedBar === earnings) return null;
+  const daysLeft = (earnings - now) / DAY_MS;
+  if (daysLeft > rule.daysBefore || daysLeft < -1) return null;
+  const when = daysLeft <= 0 ? 'วันนี้' : `อีก ${Math.ceil(daysLeft)} วัน`;
+  return {
+    barTime: earnings,
+    message: [
+      `📅 ${rule.symbol} ประกาศงบ${when}`,
+      `${thaiDate(earnings)} (วันที่ประมาณจาก Yahoo อาจคลาด ±2 วัน)`,
+      'ราคามักแกว่งแรงช่วงประกาศงบ — เช็กแผนก่อนซื้อเพิ่ม',
+    ].join('\n'),
+    signal: null,
+  };
+}
+
 /**
  * ตรวจกฎ 1 ข้อกับแท่งที่ปิดแล้ว — คืนสิ่งที่ต้องแจ้ง + แท่งล่าสุดที่ตรวจแล้ว
  * - ครั้งแรก (lastCheckedBar = null) ไม่แจ้งของเก่า แค่จำจุดเริ่ม
@@ -82,7 +128,29 @@ export function evaluateRule(
         signal: { direction: s.direction, entryType: s.entryType, entry: s.entry, sl: s.sl, tp: s.tp, reason: s.reason },
       });
     }
-  } else if (rule.price !== null) {
+  } else if (rule.kind === 'level') {
+    const opts = rule.swingLength ? { swingLength: rule.swingLength } : {};
+    const hit = (lv: KeyLevels | null, c: LevelCondition) =>
+      !!lv &&
+      (c === 'near-support'
+        ? lv.nearSupport
+        : c === 'near-resistance'
+          ? lv.nearResistance
+          : c === 'broke-support'
+            ? lv.brokeSupport !== null
+            : lv.brokeResistance !== null);
+    let prev: KeyLevels | null = null;
+    for (let i = 1; i < closed.length; i++) {
+      if (closed[i]!.time < minTime) continue;
+      prev ??= keyLevels(closed, opts, i - 1);
+      const cur = keyLevels(closed, opts, i);
+      // ดังตอน "เพิ่งเข้าเงื่อนไข" เท่านั้น — อยู่ใกล้แนวรับหลายวันก็ดังครั้งเดียว
+      if (cur && hit(cur, rule.levelCondition) && !hit(prev, rule.levelCondition)) {
+        fires.push({ barTime: closed[i]!.time, message: levelMessage(rule, cur, digits), signal: null });
+      }
+      prev = cur;
+    }
+  } else if (rule.kind === 'price' && rule.price !== null) {
     const p = rule.price;
     for (let i = 1; i < closed.length; i++) {
       const bar = closed[i]!;
@@ -121,6 +189,8 @@ export interface EngineDeps {
   now?: () => number;
   linePerDay?: number;
   log?: (msg: string) => void;
+  /** วันประกาศงบ (ดึงใหม่เมื่อ cache หมดอายุ) — ไม่ใส่ = กฎ earnings ไม่ทำงาน */
+  earnings?: (symbol: string) => Promise<number | null>;
 }
 
 export interface EngineStatus {
@@ -134,7 +204,9 @@ export interface EngineStatus {
 
 /** ต้องตรวจกฎนี้ไหม: ยังไม่เคยตรวจ หรือมีแท่งใหม่ปิดแล้วหลังจากที่ตรวจล่าสุด */
 export const isDue = (rule: AlertRule, now: number) =>
-  rule.enabled && (rule.lastCheckedBar === null || now >= rule.lastCheckedBar + 2 * TIMEFRAME_MS[rule.tf]);
+  rule.enabled &&
+  rule.kind !== 'earnings' &&
+  (rule.lastCheckedBar === null || now >= rule.lastCheckedBar + 2 * TIMEFRAME_MS[rule.tf]);
 
 /**
  * ตัวตรวจแจ้งเตือนเบื้องหลัง: ทุกรอบดูว่ากฎไหนถึงเวลา → ดึงราคาใหม่ (symbol ละครั้ง) → ตรวจ → แจ้งในแอป + LINE
@@ -168,7 +240,8 @@ export function createAlertEngine(deps: EngineDeps) {
     const errors: string[] = [];
     let checked = 0;
     let fired = 0;
-    const due = deps.alerts.rules().filter((r) => r.enabled && (force || isDue(r, t0)));
+    const enabled = deps.alerts.rules().filter((r) => r.enabled);
+    const due = enabled.filter((r) => r.kind !== 'earnings' && (force || isDue(r, t0)));
 
     // ดึงราคาใหม่ symbol ละครั้ง
     const fetchErr = new Map<string, string>();
@@ -220,6 +293,37 @@ export function createAlertEngine(deps: EngineDeps) {
         const msg = `${rule.name}: ${(err as Error).message}`;
         errors.push(msg);
         deps.alerts.patchState(rule.id, { lastError: (err as Error).message });
+      }
+    }
+    // วันประกาศงบ: ไม่ต้องดึงแท่ง อ่านจาก cache (หมดอายุแล้วค่อยดึงใหม่)
+    if (deps.earnings) {
+      for (const rule of enabled.filter((r) => r.kind === 'earnings')) {
+        try {
+          const fire = evaluateEarnings(rule, await deps.earnings(rule.symbol), now());
+          checked++;
+          if (fire) {
+            const sent = await notify(rule, fire);
+            deps.alerts.addEvent({
+              ruleId: rule.id,
+              ruleName: rule.name,
+              symbol: rule.symbol,
+              tf: rule.tf,
+              barTime: fire.barTime,
+              firedAt: now(),
+              message: fire.message,
+              signal: null,
+              strategy: '',
+              ...sent,
+            });
+            fired++;
+            deps.alerts.patchState(rule.id, { lastCheckedBar: fire.barTime, lastFiredAt: now(), lastError: null });
+          } else if (rule.lastError) {
+            deps.alerts.patchState(rule.id, { lastError: null });
+          }
+        } catch (err) {
+          errors.push(`${rule.name}: ${(err as Error).message}`);
+          deps.alerts.patchState(rule.id, { lastError: `ดึงวันประกาศงบไม่ได้: ${(err as Error).message}` });
+        }
       }
     }
     Object.assign(status, { lastTick: t0, lastTickMs: now() - t0, checked, fired, errors });
