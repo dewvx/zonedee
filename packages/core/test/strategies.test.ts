@@ -118,3 +118,110 @@ describe('pickHtf / resolveParams', () => {
     expect(p.str('b')).toBe('x');
   });
 });
+
+describe('ท่า 4 AMD (Accumulation Manipulation Distribution)', () => {
+  it('โหมด Asian Session: สะสมใน Asian (00-07) → London (07-13) sweep Low → กลับตัวขึ้น → เกิด Buy Signal', () => {
+    // วันที่ 2026-01-05 (Monday) 00:00 UTC
+    const baseTime = Date.UTC(2026, 0, 5, 0, 0, 0);
+    const m15 = 15 * 60_000;
+    const testCandles: Candle[] = [];
+
+    // 1. Asian Session: 00:00 - 07:00 UTC (28 แท่ง M15) อยู่ในช่วง 2000 - 2060
+    for (let i = 0; i < 28; i++) {
+      testCandles.push({
+        time: baseTime + i * m15,
+        open: 2020,
+        high: 2060,
+        low: 2000,
+        close: 2030,
+        volume: 10,
+      });
+    }
+
+    // 2. London Manipulation: แท่งที่ 28 (07:00 UTC) แทงไส้หลุด 1990 แล้วปิดกลับที่ 2005
+    testCandles.push({
+      time: baseTime + 28 * m15,
+      open: 2010,
+      high: 2015,
+      low: 1990, // sweep Asian Low (2000)
+      close: 2005, // ปิดกลับเข้ามาในกรอบ
+      volume: 20,
+    });
+
+    // 3. Distribution: แท่งที่ 29 (07:15 UTC) ดีดกลับตัวขึ้นปิดสูงกว่าแท่ง sweep
+    testCandles.push({
+      time: baseTime + 29 * m15,
+      open: 2005,
+      high: 2025,
+      low: 2002,
+      close: 2020, // close > 2015
+      volume: 25,
+    });
+
+    const amdStrat = STRATEGIES.find((s) => s.id === 'amd')!;
+    const signals = amdStrat.generate({
+      candles: testCandles,
+      tf: 'M15',
+      params: { mode: 'session', entryMode: 'market', tpMode: 'opposite_range' },
+    });
+
+    expect(signals.length).toBeGreaterThan(0);
+    const sig = signals[0]!;
+    expect(sig.direction).toBe('long');
+    expect(sig.sl).toBeLessThan(1990); // SL อยู่ใต้จุดต่ำสุดของไส้ที่ sweep
+    expect(sig.tp).toBeGreaterThanOrEqual(2050); // TP อยู่ที่ Asian High
+    expect(sig.reason).toContain('ท่า 4 AMD');
+  });
+
+  it('โหมด Consolidation: สะสมกรอบแคบ → sweep High → แท่งถัดไปกลับตัวลง → เกิด Sell Signal', () => {
+    const baseTime = Date.UTC(2026, 0, 5, 12, 0, 0);
+    const m5 = 5 * 60_000;
+    const testCandles: Candle[] = [];
+
+    // 20 แท่งแรก วิ่งในกรอบแคบ 100 - 105
+    for (let i = 0; i < 22; i++) {
+      testCandles.push({
+        time: baseTime + i * m5,
+        open: 102,
+        high: 105,
+        low: 100,
+        close: 103,
+        volume: 5,
+      });
+    }
+
+    // แท่งที่ 23: sweep High ไปแตะ 108 แล้วปิดที่ 104
+    testCandles.push({
+      time: baseTime + 22 * m5,
+      open: 103,
+      high: 108,
+      low: 102,
+      close: 104,
+      volume: 15,
+    });
+
+    // แท่งที่ 24: ทุบกลับตัวลงปิดที่ 101 (close < 102)
+    testCandles.push({
+      time: baseTime + 23 * m5,
+      open: 104,
+      high: 104.5,
+      low: 100.5,
+      close: 101,
+      volume: 20,
+    });
+
+    const amdStrat = STRATEGIES.find((s) => s.id === 'amd')!;
+    const signals = amdStrat.generate({
+      candles: testCandles,
+      tf: 'M5',
+      params: { mode: 'consolidation', entryMode: 'market', tpMode: 'opposite_range' },
+    });
+
+    expect(signals.length).toBeGreaterThan(0);
+    const sig = signals[0]!;
+    expect(sig.direction).toBe('short');
+    expect(sig.sl).toBeGreaterThan(108); // SL อยู่เหนือปลายไส้ sweep
+    expect(sig.tp).toBeLessThanOrEqual(100); // TP อยู่ที่กรอบล่าง
+  });
+});
+

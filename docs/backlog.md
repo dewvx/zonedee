@@ -13,7 +13,7 @@
 | **TASK-01** | ปรับเวลาตัดแท่ง Daily ตาม NY Close (17:00 NY) | Forex / Trading Data | สูง | ✅ เสร็จสิ้น |
 | **TASK-02** | Hotkeys / คีย์ลัดบนหน้ากราฟและโหมด Replay | UI / UX Usability | สูง | ✅ เสร็จสิ้น |
 | **TASK-03** | ปฏิทินบันทึกการเทรดใน Journal (Trade Calendar) | Trading Journal | กลาง | ✅ เสร็จสิ้น |
-| **TASK-04** | ท่าเทรดใหม่: ท่า 4 AMD (Accumulation, Manipulation, Distribution) | SMC Strategy | กลาง-สูง | 🟡 รอดำเนินการ |
+| **TASK-04** | ท่าเทรดใหม่: ท่า 4 AMD (Accumulation, Manipulation, Distribution) | SMC Strategy | กลาง-สูง | ✅ เสร็จสิ้น |
 | **TASK-05** | เครื่องมือจูนพารามิเตอร์อัตโนมัติ (Grid Search Optimization) | Backtest Engine | กลาง | 🟡 รอดำเนินการ |
 | **TASK-06** | คำนวณต้นทุน Swap ข้ามคืน (Overnight Swap) | Risk & Backtest | ปานกลาง | 🟡 รอดำเนินการ |
 | **TASK-07** | Walk-Forward Analysis & Multi-Pair Backtesting | Advanced Backtest | ปานกลาง | 🟡 รอดำเนินการ |
