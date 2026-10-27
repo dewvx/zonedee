@@ -11,7 +11,15 @@ import {
   type Candle,
   type D1Cutoff,
 } from '@zonedee/core';
-import { BacktestError, backtestCompare, backtestOne, strategyList, type BacktestRequest } from './backtest';
+import {
+  BacktestError,
+  backtestCompare,
+  backtestOne,
+  backtestTune,
+  strategyList,
+  type BacktestRequest,
+  type TuneRequest,
+} from './backtest';
 import type { ContractInfo } from './contract';
 import { JournalError, type JournalInput, type JournalStore } from './journal';
 import { DEFAULT_LINE_PER_DAY, type AlertEngine } from './alerts/engine';
@@ -338,6 +346,25 @@ export function createApp(deps: AppDeps) {
     }
     try {
       res.json(body.strategy === 'all' ? backtestCompare(store, cfg, body) : backtestOne(store, cfg, body));
+    } catch (err) {
+      const status = err instanceof BacktestError ? err.status : 500;
+      res.status(status).json({ error: (err as Error).message });
+    }
+  });
+
+  /**
+   * POST /api/backtest/tune  body: TuneRequest (ดู src/backtest.ts)
+   * รัน Grid Search Optimization หาค่าพารามิเตอร์ที่ดีที่สุดของท่า
+   */
+  app.post('/api/backtest/tune', (req, res) => {
+    const body = (req.body ?? {}) as TuneRequest;
+    const cfg = find(body.symbol);
+    if (!cfg) {
+      res.status(404).json({ error: `ไม่รู้จัก symbol: ${body.symbol}` });
+      return;
+    }
+    try {
+      res.json(backtestTune(store, cfg, body));
     } catch (err) {
       const status = err instanceof BacktestError ? err.status : 500;
       res.status(status).json({ error: (err as Error).message });

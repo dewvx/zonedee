@@ -9,7 +9,7 @@
  */
 import { parseArgs } from 'node:util';
 import type { ParamValue, Stats } from '@zonedee/core';
-import { BacktestError, backtestCompare, backtestOne, strategyList } from './backtest';
+import { BacktestError, backtestCompare, backtestOne, backtestTune, strategyList } from './backtest';
 import { CandleStore, DEFAULT_DB_PATH } from './store';
 import { UserSymbolStore, createSymbolRegistry } from './user-symbols';
 
@@ -19,6 +19,8 @@ const { values } = parseArgs({
     tf: { type: 'string', short: 't', default: 'M15' },
     strategy: { type: 'string', default: 'ema-cross' },
     all: { type: 'boolean', default: false },
+    tune: { type: 'boolean', default: false },
+    grid: { type: 'string', multiple: true },
     list: { type: 'boolean', default: false },
     param: { type: 'string', multiple: true, short: 'p' },
     spread: { type: 'string' },
@@ -56,6 +58,18 @@ for (const kv of values.param ?? []) {
   params[k] = type === 'number' ? Number(v) : type === 'boolean' ? v === 'true' : v;
 }
 
+const customGrid: Record<string, ParamValue[]> = {};
+for (const kv of values.grid ?? []) {
+  const [k = '', vals = ''] = kv.split('=');
+  const type = specs.find((p) => p.key === k)?.type;
+  customGrid[k] = vals.split(',').map((v) => {
+    const trimmed = v.trim();
+    if (type === 'number' || (!isNaN(Number(trimmed)) && trimmed !== '')) return Number(trimmed);
+    if (type === 'boolean' || trimmed === 'true' || trimmed === 'false') return trimmed === 'true';
+    return trimmed;
+  });
+}
+
 const req = {
   symbol: cfg.symbol,
   tf: values.tf!,
@@ -76,7 +90,32 @@ const day = (t: number | null) => (t ? new Date(t).toISOString().slice(0, 16).re
 
 const store = new CandleStore();
 try {
-  if (req.strategy === 'all') {
+  if (values.tune) {
+    const r = backtestTune(store, cfg, {
+      ...req,
+      grid: Object.keys(customGrid).length > 0 ? customGrid : undefined,
+    });
+    console.log(
+      `\n🎯 Grid Search Tuning: ${r.strategyName} · ${r.meta.symbol} ${r.meta.tf} · ${r.testedCombinations}/${r.totalCombinations} combinations (${r.meta.durationMs} ms)\n`,
+    );
+    if (r.best) {
+      console.log(`🏆 ค่าที่ดีที่สุด: [${r.best.label}]`);
+      console.log(`   ${line(r.best.stats)}${r.best.baseline ? ` · ชนะสุ่ม ${f(r.best.baseline.percentile, 0)}%` : ''}`);
+      console.log(
+        `   out-of-sample: ${r.best.outOfSample.trades} เทรด เฉลี่ย ${f(r.best.outOfSample.expectancyR)}R (DD ${f(r.best.stats.maxDrawdownR, 1)}R)\n`,
+      );
+    } else {
+      console.log('⚠ ไม่พบ combination ที่ทำกำไรได้\n');
+    }
+    console.log('อันดับ 10 อันดับแรก:');
+    for (let i = 0; i < Math.min(10, r.rows.length); i++) {
+      const row = r.rows[i]!;
+      const bestMark = row.isBest ? ' [BEST]' : row.isSignificant ? ' [PASS]' : '';
+      const pct = row.baseline ? ` · ชนะสุ่ม ${f(row.baseline.percentile, 0)}%` : '';
+      console.log(`#${String(i + 1).padEnd(2)}${bestMark.padEnd(8)} ${row.label}`);
+      console.log(`    ${line(row.stats)}${pct} · OOS ${f(row.outOfSample.expectancyR)}R`);
+    }
+  } else if (req.strategy === 'all') {
     const r = backtestCompare(store, cfg, req);
     console.log(`\n${r.meta.symbol} ${r.meta.tf} · ${r.meta.bars.toLocaleString()} แท่ง (${day(r.meta.from)} → ${day(r.meta.to)} UTC) · spread ${r.meta.spreadPoints} pt · ${r.meta.durationMs} ms\n`);
     for (const row of r.rows) {

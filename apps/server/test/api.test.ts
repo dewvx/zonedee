@@ -170,6 +170,33 @@ describe('backtest API', () => {
     expect((await post({ symbol: 'XAUUSD', tf: 'M5', strategy: 'nope' })).status).toBe(400);
     expect((await post({ symbol: 'XAUUSD', tf: 'M7', strategy: 'crt' })).status).toBe(400);
   });
+
+  it('POST /api/backtest/tune → รัน Grid Search ส่งคืน rows และ best combination', async () => {
+    seed();
+    const tunePost = (body: unknown) =>
+      fetch(`${base}/api/backtest/tune`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+    const res = await tunePost({
+      symbol: 'XAUUSD',
+      tf: 'M5',
+      strategy: 'ema-cross',
+      grid: {
+        swingLength: [2, 3],
+        rr: [1.5, 2.0],
+      },
+      topBaselineRuns: 10,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Json;
+    expect(body.strategy).toBe('ema-cross');
+    expect(body.totalCombinations).toBe(4);
+    expect(body.rows.length).toBe(4);
+    expect(body.rows[0].expectancyR).toBeDefined();
+  });
 });
 
 describe('GET /api/candles?after', () => {

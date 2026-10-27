@@ -1,20 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
-import { DEFAULTS, type BaselineResult, type ParamValue, type Stats, type Timeframe, type Trade } from '@zonedee/core';
+import { DEFAULTS, type BaselineResult, type ParamValue, type Stats, type Timeframe, type Trade, type TuningGrid } from '@zonedee/core';
 import {
   fetchStrategies,
   fetchSymbols,
   runBacktest,
   runCompare,
+  runTune,
   type BacktestResponse,
   type CompareResponse,
   type StrategyInfo,
   type SymbolSummary,
+  type TuneResponse,
 } from '../api';
 import { EquityChart } from '../components/EquityChart';
 import { ParamForm } from '../components/ParamForm';
 import { Icon } from '../components/Icon';
 import { Empty, Field, Note, Section, SidePanel, Stat } from '../components/ui';
 import { TradePreview } from '../components/TradePreview';
+import { TuneModal } from '../components/TuneModal';
 import { fmtPct, fmtR, formatThaiDate, formatThaiTime } from '../format';
 
 interface BtSettings {
@@ -172,9 +175,13 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
   const coverage = info?.coverage[s.tf];
 
   const [running, setRunning] = useState(false);
+  const [tuning, setTuning] = useState(false);
+  const [tuneModalOpen, setTuneModalOpen] = useState(false);
+  const [tuneNotice, setTuneNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [single, setSingle] = useState<BacktestResponse | null>(null);
   const [compare, setCompare] = useState<CompareResponse | null>(null);
+  const [tuneResult, setTuneResult] = useState<TuneResponse | null>(null);
   const [equityMode, setEquityMode] = useState<'r' | 'balance'>('r');
   const [filter, setFilter] = useState<TradeFilter>('all');
   const [shown, setShown] = useState(200);
@@ -197,21 +204,106 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
     if (!strategyId) return;
     setRunning(true);
     setError(null);
+    setTuneNotice(null);
     try {
       if (mode === 'single') {
         const res = await runBacktest({ ...request(), strategy: strategyId, params: s.params[strategyId] ?? {} });
         setSingle(res);
         setCompare(null);
+        setTuneResult(null);
         setSelected(null);
         setShown(200);
       } else {
         setCompare(await runCompare(request()));
         setSingle(null);
+        setTuneResult(null);
       }
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setRunning(false);
+    }
+  };
+
+  const handleRunTune = async (grid: TuningGrid, baselineRuns: number) => {
+    if (!strat) return;
+    setTuning(true);
+    setError(null);
+    setTuneNotice(null);
+    try {
+      const res = await runTune({
+        ...request(),
+        strategy: strat.id,
+        grid,
+        baselineRuns,
+      });
+      setTuneResult(res);
+      setSingle(null);
+      setCompare(null);
+      setSelected(null);
+    } catch (e) {
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      setTuning(false);
+    }
+  };
+
+  const applyCombination = (combo: Record<string, any>, autoRun = false) => {
+    if (!strat) return;
+    const detectorKeys = ['swingLength', 'breakBy'];
+    const newSwing = combo.swingLength !== undefined ? Number(combo.swingLength) : s.swingLength;
+    const newBreak = combo.breakBy !== undefined ? (combo.breakBy as 'close' | 'wick') : s.breakBy;
+    const stratParams: Record<string, any> = { ...(s.params[strat.id] ?? {}) };
+    for (const [k, v] of Object.entries(combo)) {
+      if (!detectorKeys.includes(k)) {
+        stratParams[k] = v;
+      }
+    }
+
+    const nextS: BtSettings = {
+      ...s,
+      swingLength: newSwing,
+      breakBy: newBreak,
+      params: {
+        ...s.params,
+        [strat.id]: stratParams,
+      },
+    };
+    setS(nextS);
+    setTuneNotice(`อัปเดตค่าพารามิเตอร์สำหรับ ${strat.name} เรียบร้อยแล้ว`);
+
+    if (autoRun) {
+      void (async () => {
+        setRunning(true);
+        setError(null);
+        try {
+          const req = {
+            symbol: nextS.symbol,
+            tf: nextS.tf,
+            strategy: strat.id,
+            params: stratParams,
+            cfg: { swingLength: newSwing, breakBy: newBreak },
+            from: nextS.days > 0 && coverage ? coverage.last - nextS.days * 86_400_000 : undefined,
+            spreadPoints: nextS.spreadPoints ?? undefined,
+            riskPct: nextS.riskPct,
+            initialBalance: nextS.balance,
+            maxBarsInTrade: nextS.maxBarsInTrade,
+            oosFraction: nextS.oosPct / 100,
+            baselineRuns: nextS.baselineRuns,
+          };
+          const res = await runBacktest(req);
+          setSingle(res);
+          setCompare(null);
+          setTuneResult(null);
+          setSelected(null);
+          setShown(200);
+        } catch (e) {
+          setError((e as Error).message);
+        } finally {
+          setRunning(false);
+        }
+      })();
     }
   };
 
@@ -249,7 +341,7 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
             <div className="flex gap-2">
               <button
                 onClick={() => void run('single')}
-                disabled={running || !strat || !strat.timeframes.includes(s.tf)}
+                disabled={running || tuning || !strat || !strat.timeframes.includes(s.tf)}
                 className="btn btn-primary flex-1"
               >
                 <Icon name="play" size={14} />
@@ -257,13 +349,22 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
               </button>
               <button
                 onClick={() => void run('compare')}
-                disabled={running}
+                disabled={running || tuning}
                 title="รันทุกท่าด้วยค่าเริ่มต้นบนข้อมูลชุดเดียวกัน"
                 className="btn"
               >
                 เทียบทุกท่า
               </button>
             </div>
+            <button
+              onClick={() => setTuneModalOpen(true)}
+              disabled={running || tuning || !strat || !strat.timeframes.includes(s.tf)}
+              title="ค้นหาชุดพารามิเตอร์ที่ให้ผลลัพธ์ดีที่สุด (Grid Search)"
+              className="btn w-full"
+            >
+              <Icon name="sliders" size={14} />
+              {tuning ? 'กำลังจูนพารามิเตอร์…' : 'จูนพารามิเตอร์ (Grid Search)'}
+            </button>
             <p className="text-xs leading-relaxed text-faint">
               ใช้ข้อมูลที่ดึงไว้แล้ว · เข้าแท่งถัดจากสัญญาณ · ถือทีละไม้ · ผลเป็น R (1R = ระยะ SL)
             </p>
@@ -395,11 +496,16 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
       <main className="min-w-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[1200px] space-y-5 p-6">
           {error && <Note kind="bad">{error}</Note>}
+          {tuneNotice && (
+            <Note kind="ok" onClose={() => setTuneNotice(null)}>
+              {tuneNotice}
+            </Note>
+          )}
 
-          {!single && !compare && !error && (
+          {!single && !compare && !tuneResult && !error && (
             <Empty icon="backtest" title="เลือกท่าแล้วกดรัน backtest">
               ดูว่าท่าจากไฟล์ริวเรน / Braron ทำกำไรจริงไหมบนข้อมูลย้อนหลัง — จะเริ่มเชื่อได้เมื่อมีอย่างน้อย 100 เทรด, กำไรในช่วง
-              out-of-sample และชนะการเข้าแบบสุ่ม
+              out-of-sample และชนะการเข้าแบบสุ่ม หรือใช้ปุ่ม "จูนพารามิเตอร์" เพื่อค้นหาค่าที่ดีที่สุดอัตโนมัติ
             </Empty>
           )}
 
@@ -461,6 +567,196 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
                 </tbody>
               </table>
             </section>
+          )}
+
+          {tuneResult && (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="badge bg-accent/15 text-accent font-semibold">Grid Search</span>
+                    <h2 className="text-lg font-semibold leading-tight text-fg">
+                      ผลการจูนพารามิเตอร์ — {tuneResult.strategyName}
+                    </h2>
+                  </div>
+                  <Meta
+                    items={[
+                      ['ตลาด', `${tuneResult.meta.symbol} ${tuneResult.meta.tf}`],
+                      ['ชุดค่าผสม', `${tuneResult.testedCombinations} / ${tuneResult.totalCombinations} ชุด`],
+                      ['ข้อมูล', `${tuneResult.meta.bars.toLocaleString()} แท่ง`],
+                      ['ช่วง', `${tuneResult.meta.from ? formatThaiDate(tuneResult.meta.from) : ''} – ${tuneResult.meta.to ? formatThaiDate(tuneResult.meta.to) : ''}`],
+                      ['spread', `${tuneResult.meta.spreadPoints} pt`],
+                      ['ใช้เวลา', `${(tuneResult.meta.durationMs / 1000).toFixed(2)} วิ`],
+                    ]}
+                  />
+                </div>
+                <button
+                  onClick={() => setTuneModalOpen(true)}
+                  className="btn btn-sm"
+                  title="ปรับเปลี่ยนช่วงค่าและค้นหาใหม่"
+                >
+                  <Icon name="sliders" size={14} />
+                  ปรับเงื่อนไขจูน
+                </button>
+              </div>
+
+              {/* 🏆 กล่องแชมป์ / ค่าที่ดีที่สุด */}
+              {tuneResult.best ? (
+                <div className="card border-accent/40 bg-accent/5 p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base font-bold text-fg">🏆 ชุดพารามิเตอร์ที่ดีที่สุด (Rank #1)</span>
+                        {tuneResult.best.isSignificant ? (
+                          <span className="badge bg-bull/15 text-bull">✓ ผ่านเกณฑ์สถิติ (OOS & ชนะสุ่ม ≥ 90%)</span>
+                        ) : (
+                          <span className="badge bg-warn/15 text-warn">⚠️ ยังไม่ผ่านเกณฑ์สถิติทั้งหมด</span>
+                        )}
+                      </div>
+                      <div className="font-mono text-sm font-medium text-accent">
+                        {tuneResult.best.label}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => applyCombination(tuneResult.best!.combination, false)}
+                        className="btn btn-sm"
+                        title="โหลดค่านี้ใส่ลงในฟอร์มด้านซ้าย"
+                      >
+                        นำค่านี้ไปใส่ฟอร์ม
+                      </button>
+                      <button
+                        onClick={() => applyCombination(tuneResult.best!.combination, true)}
+                        className="btn btn-sm btn-primary"
+                        title="โหลดค่านี้และรัน backtest ละเอียดทันที"
+                      >
+                        <Icon name="play" size={12} />
+                        ใช้ค่านี้และรัน Backtest ทันที
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-4 border-t border-line/60 pt-4 sm:grid-cols-4 xl:grid-cols-7">
+                    <Stat label="เทรดทั้งหมด" value={tuneResult.best.stats.trades} sub={`ชนะ ${tuneResult.best.stats.wins} แพ้ ${tuneResult.best.stats.losses}`} />
+                    <Stat label="Win Rate" value={fmtPct(tuneResult.best.stats.winRate)} />
+                    <Stat
+                      label="เฉลี่ยต่อไม้"
+                      value={fmtR(tuneResult.best.stats.expectancyR)}
+                      tone={tuneResult.best.stats.expectancyR > 0 ? 'up' : tuneResult.best.stats.expectancyR < 0 ? 'down' : undefined}
+                    />
+                    <Stat
+                      label="กำไรรวม"
+                      value={fmtR(tuneResult.best.stats.totalR, 1)}
+                      tone={tuneResult.best.stats.totalR > 0 ? 'up' : tuneResult.best.stats.totalR < 0 ? 'down' : undefined}
+                    />
+                    <Stat label="Max Drawdown" value={`${tuneResult.best.stats.maxDrawdownR.toFixed(1)}R`} />
+                    <Stat
+                      label="Out-of-sample"
+                      value={tuneResult.best.outOfSample.trades ? fmtR(tuneResult.best.outOfSample.expectancyR) : '-'}
+                      tone={tuneResult.best.outOfSample.expectancyR > 0 ? 'up' : tuneResult.best.outOfSample.expectancyR < 0 ? 'down' : undefined}
+                      sub={`${tuneResult.best.outOfSample.trades} เทรด`}
+                    />
+                    <Stat
+                      label="ชนะการสุ่ม"
+                      value={tuneResult.best.baseline ? `${tuneResult.best.baseline.percentile.toFixed(0)}%` : '-'}
+                      tone={tuneResult.best.baseline && tuneResult.best.baseline.percentile >= 90 ? 'up' : undefined}
+                      sub={tuneResult.best.baseline ? `สุ่ม ${tuneResult.best.baseline.runs} รอบ` : 'ไม่ได้สุ่ม'}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <Note kind="warn">
+                  ไม่พบชุดพารามิเตอร์ที่ผ่านเกณฑ์หรือมีสัญญาณเทรดเลย — ลองขยายช่วงตัวแปรหรือเพิ่มช่วงข้อมูล
+                </Note>
+              )}
+
+              {/* ตารางจัดอันดับ */}
+              <section className="card overflow-hidden">
+                <div className="border-b border-line px-5 py-3.5">
+                  <h3 className="text-[14px] font-semibold text-fg">
+                    ตารางเปรียบเทียบทุกชุดค่าผสม (เรียงตามคะแนน Edge + สถิติ)
+                  </h3>
+                  <p className="mt-0.5 text-xs text-muted">
+                    อันดับ 1-8 ด้านบนจะได้รับการสุ่ม Random Baseline เพื่อยืนยันว่ากำไรไม่ได้เกิดจากความบังเอิญ
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th className="pl-5 text-center w-12">#</th>
+                        <th>ชุดพารามิเตอร์</th>
+                        <th className="text-right">เทรด</th>
+                        <th className="text-right">ชนะ</th>
+                        <th className="text-right">เฉลี่ย/ไม้</th>
+                        <th className="text-right">รวม</th>
+                        <th className="text-right">DD สูงสุด</th>
+                        <th className="text-right">out-of-sample</th>
+                        <th className="text-right">ชนะสุ่ม</th>
+                        <th className="pr-5 text-right">นำไปใช้</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tuneResult.rows.map((row, idx) => {
+                        const rank = row.rank ?? idx + 1;
+                        return (
+                          <tr
+                            key={`${rank}-${row.label}`}
+                            className={`hover:bg-hover ${rank === 1 ? 'bg-accent/5' : ''}`}
+                          >
+                            <td className="pl-5 text-center tabular-nums">
+                              {rank === 1 ? (
+                                <span className="badge bg-bull/20 text-bull font-bold">1</span>
+                              ) : (
+                                <span className="text-muted text-xs">{rank}</span>
+                              )}
+                            </td>
+                            <td>
+                              <div className="font-mono text-xs font-medium text-fg">
+                                {row.label}
+                              </div>
+                              {row.isSignificant && (
+                                <span className="text-[10px] text-bull font-medium">✓ ผ่านเกณฑ์สถิติ</span>
+                              )}
+                            </td>
+                            <td className="text-right tabular-nums">{row.stats.trades}</td>
+                            <td className="text-right tabular-nums">
+                              {row.stats.trades ? fmtPct(row.stats.winRate) : '-'}
+                            </td>
+                            <td className={`text-right font-medium tabular-nums ${tone(row.stats.expectancyR)}`}>
+                              {row.stats.trades ? fmtR(row.stats.expectancyR) : '-'}
+                            </td>
+                            <td className={`text-right tabular-nums ${tone(row.stats.totalR)}`}>
+                              {row.stats.trades ? fmtR(row.stats.totalR, 1) : '-'}
+                            </td>
+                            <td className="text-right tabular-nums text-muted">
+                              {row.stats.trades ? `${row.stats.maxDrawdownR.toFixed(1)}R` : '-'}
+                            </td>
+                            <td className={`text-right tabular-nums ${tone(row.outOfSample.expectancyR)}`}>
+                              {row.outOfSample.trades
+                                ? `${fmtR(row.outOfSample.expectancyR)} (${row.outOfSample.trades})`
+                                : '-'}
+                            </td>
+                            <td className="text-right tabular-nums">
+                              {row.baseline ? `${row.baseline.percentile.toFixed(0)}%` : '-'}
+                            </td>
+                            <td className="pr-5 text-right">
+                              <button
+                                onClick={() => applyCombination(row.combination, false)}
+                                className="btn btn-sm text-xs hover:border-accent hover:text-accent"
+                                title="นำค่าชุดนี้ไปใส่ในฟอร์ม"
+                              >
+                                เลือกใช้
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
           )}
 
           {single && r && v && (
@@ -658,6 +954,20 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
           onClose={() => setSelected(null)}
           onPrev={selected! > 0 ? () => setSelected((k) => (k ?? 1) - 1) : undefined}
           onNext={selected! < trades.length - 1 ? () => setSelected((k) => (k ?? 0) + 1) : undefined}
+        />
+      )}
+
+      {tuneModalOpen && strat && (
+        <TuneModal
+          isOpen={tuneModalOpen}
+          onClose={() => setTuneModalOpen(false)}
+          strategyId={strat.id}
+          strategyName={strat.name}
+          symbol={s.symbol}
+          tf={s.tf}
+          availableParams={strat.params}
+          onRun={handleRunTune}
+          running={tuning}
         />
       )}
     </div>

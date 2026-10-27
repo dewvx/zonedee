@@ -8,6 +8,7 @@ import type {
   ContractSpec,
   D1Cutoff,
   DetectorConfig,
+  GridSearchRow,
   Market,
   ParamSpec,
   ParamValue,
@@ -176,6 +177,25 @@ const postJson = <T>(url: string, body: unknown) =>
 export const runBacktest = (req: BacktestRequest) => postJson<BacktestResponse>('/api/backtest', req);
 export const runCompare = (req: Omit<BacktestRequest, 'strategy'>) =>
   postJson<CompareResponse>('/api/backtest', { ...req, strategy: 'all' });
+
+export interface TuneRequest extends BacktestRequest {
+  grid?: Record<string, ParamValue[]>;
+  maxCombinations?: number;
+  topBaselineRuns?: number;
+  minSignificantTrades?: number;
+}
+
+export interface TuneResponse {
+  meta: BacktestMeta;
+  strategy: string;
+  strategyName: string;
+  totalCombinations: number;
+  testedCombinations: number;
+  best: GridSearchRow | null;
+  rows: GridSearchRow[];
+}
+
+export const runTune = (req: TuneRequest) => postJson<TuneResponse>('/api/backtest/tune', req);
 
 // ── Journal (Phase 8) ─────────────────────────────────────────────────
 

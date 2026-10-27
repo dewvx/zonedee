@@ -117,7 +117,7 @@
 
 ---
 
-### TASK-05: เครื่องมือจูนพารามิเตอร์อัตโนมัติ (Grid Search Optimization)
+### TASK-05: เครื่องมือจูนพารามิเตอร์อัตโนมัติ (Grid Search Optimization) [เสร็จสมบูรณ์]
 - **อ้างอิงกฎ**: [docs/rules.md ข้อ D1–D16](file:///d:/zonedee/docs/rules.md#L214)
 - **เป้าหมาย**: รัน Backtest หลายตัวแปรพร้อมกันเพื่อหาค่าที่ดีที่สุดของแต่ละท่าบนข้อมูลจริงระยะยาว
 - **ข้อกำหนด (Specs)**:
@@ -133,10 +133,13 @@
      - Max Drawdown (R)
      - Out-of-sample Performance %
   4. ไฮไลต์ Combination ที่ดีที่สุดและมีนัยสำคัญทางสถิติ (Random Baseline Percentile ≥ 95%) เพื่อนำไปอัปเดตค่า default ใน `rules.md`
-- **ไฟล์ที่ต้องแก้ไข**:
-  - `packages/core/src/backtest/`
-  - `apps/server/src/backtest.ts`
-  - `apps/web/src/views/BacktestView.tsx`
+- **ไฟล์ที่สร้าง/แก้ไข**:
+  - `packages/core/src/backtest/grid-search.ts`: เอนจิน Grid Search 2-tier (รันเร็ว combination ทั้งหมด แล้วประเมิน Random Baseline Top 8), Cartesian Product, scoring, default tuning grids
+  - `packages/core/test/grid-search.test.ts`: Unit tests 6 ข้อ
+  - `apps/server/src/backtest.ts`: API `backtestTune`, CLI flags (`--tune`, `--grid`) ใน `backtest-cli.ts`
+  - `apps/server/src/app.ts`: Endpoint `POST /api/backtest/tune`
+  - `apps/web/src/components/TuneModal.tsx`: Modal ตั้งค่าช่วงตัวแปร candidates พิมพ์คั่นด้วย comma และคำนวณจำนวนชุดค่าผสม
+  - `apps/web/src/views/BacktestView.tsx`: ปุ่มจูนพารามิเตอร์, กล่องแชมป์ 🏆 ชุดที่ดีที่สุด, ตารางจัดอันดับพร้อมปุ่มเลือกใช้ค่า (Apply to form / Run backtest)
 
 ---
 

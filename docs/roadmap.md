@@ -36,6 +36,6 @@
 - [x] **Hotkeys / คีย์ลัดบนหน้ากราฟและโหมด Replay** (`TASK-02`): สลับ TF ด้วยตัวเลข 1, 5, 15, 30, 4, 6 หรือ H/D/W, เปิด/ปิด EMA (E), โครงสร้างราคา (L), Replay เดินแท่ง (Space/→), BUY (B), SELL (S), ข้าม (N/X), สุ่มใหม่ (R), หน้าต่างคู่มือคีย์ลัด HotkeyHelpModal (?)
 - [x] **ปฏิทินบันทึกการเทรดใน Journal (Trade Calendar View)** (`TASK-03`): ตารางปฏิทินรายเดือนแสดงผลรวม R ประจำวัน (เขียว/แดง), แถวสรุปประจำสัปดาห์ (Weekly Total R), แถบสรุปภาพรวมประจำเดือน (Win Rate, Total R, PnL, Plan Adherence), คลิกเลือกวันเพื่อกรองรายการเทรดด้านล่าง และสลับมุมมอง List/Calendar ได้อย่างราบรื่น
 - [x] **ท่า 4 AMD (Accumulation, Manipulation, Distribution)** (`TASK-04`): จับช่วงสะสม Asian Session (00-07 UTC), London Manipulation Sweep (07-13 UTC), ยืนยันกลับตัว MSS / Reversal, เข้า Market/Limit, SL ปลายไส้ sweep, TP ฝั่งตรงข้ามของ Asian Range (หรือ R:R), พร้อมโหมด Rolling Consolidation สำหรับทุก TF/ตลาด
-- จูนค่า D1 (swing) / D2 / D3 / D11 / D12 ด้วย backtest บนข้อมูล MT5 จริงหลายเดือน แล้วตัดสินในตาราง rules.md (`TASK-05`)
+- [x] **เครื่องมือจูนพารามิเตอร์อัตโนมัติ (Grid Search Optimization)** (`TASK-05`): รัน Backtest หลายตัวแปรพร้อมกัน (Cartesian Product), ประเมิน Expectancy, Win Rate, Max DD, Out-of-sample และ Random Baseline (Top 8), ไฮไลต์ชุดที่ดีที่สุดและมีนัยสำคัญทางสถิติ, รองรับทั้ง CLI (`--tune`, `--grid`) และหน้าเว็บ BacktestView พร้อมปุ่มนำค่าไปใส่ฟอร์มหรือรันทันที
 - ท่า 7 Trendline, ท่า 8 Power x Braron (รอนิยามเพิ่ม)
 - walk-forward / ทดสอบหลายคู่เงินพร้อมกัน (`TASK-07`), ต้นทุน swap ข้ามคืน (`TASK-06`)

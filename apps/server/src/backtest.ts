@@ -2,12 +2,16 @@ import {
   RUN_DEFAULTS,
   STRATEGIES,
   TIMEFRAME_MS,
+  getDefaultTuningGrid,
   getStrategy,
   isTimeframe,
   runBacktest,
+  runGridSearch,
   type BacktestResult,
   type Candle,
   type DetectorConfig,
+  type GridSearchRow,
+  type GridSearchResult,
   type ParamValue,
   type Stats,
   type Timeframe,
@@ -78,6 +82,23 @@ export interface CompareRow {
 export interface CompareResponse {
   meta: Omit<BacktestMeta, 'strategy' | 'strategyName' | 'signals'>;
   rows: CompareRow[];
+}
+
+export interface TuneRequest extends BacktestRequest {
+  grid?: Record<string, ParamValue[]>;
+  maxCombinations?: number;
+  topBaselineRuns?: number;
+  minSignificantTrades?: number;
+}
+
+export interface TuneResponse {
+  meta: BacktestMeta;
+  strategy: string;
+  strategyName: string;
+  totalCombinations: number;
+  testedCombinations: number;
+  best: GridSearchRow | null;
+  rows: GridSearchRow[];
 }
 
 export class BacktestError extends Error {
@@ -187,6 +208,45 @@ export function backtestCompare(store: CandleStore, cfg: SymbolConfig, req: Back
   });
   rows.sort((a, b) => b.stats.expectancyR - a.stats.expectancyR);
   return { meta: baseMeta(cfg, d, started), rows };
+}
+
+/** รัน Grid Search Optimization หาค่าที่ดีที่สุดของท่า */
+export function backtestTune(store: CandleStore, cfg: SymbolConfig, req: TuneRequest): TuneResponse {
+  const started = Date.now();
+  const d = load(store, cfg, req);
+  const strat = getStrategy(req.strategy);
+  if (!strat) throw new BacktestError(`ไม่รู้จักท่า: ${req.strategy} (มี: ${STRATEGIES.map((s) => s.id).join(', ')})`);
+
+  const grid = req.grid && Object.keys(req.grid).length > 0 ? req.grid : getDefaultTuningGrid(strat);
+
+  const res = runGridSearch(d.candles, strat, grid, {
+    tf: d.tf,
+    spread: d.spread,
+    maxBarsInTrade: req.maxBarsInTrade ?? 0,
+    fine: d.fine ? { candles: d.fine, tf: 'M1' } : undefined,
+    riskPct: req.riskPct ?? RUN_DEFAULTS.riskPct,
+    initialBalance: req.initialBalance ?? RUN_DEFAULTS.initialBalance,
+    oosFraction: req.oosFraction ?? RUN_DEFAULTS.oosFraction,
+    maxCombinations: req.maxCombinations ?? 150,
+    topBaselineRuns: req.topBaselineRuns ?? 50,
+    minSignificantTrades: req.minSignificantTrades ?? 25,
+    seed: req.seed ?? RUN_DEFAULTS.seed,
+  });
+
+  return {
+    meta: {
+      ...baseMeta(cfg, d, started),
+      strategy: strat.id,
+      strategyName: strat.name,
+      signals: res.best?.signalsCount ?? 0,
+    },
+    strategy: strat.id,
+    strategyName: strat.name,
+    totalCombinations: res.totalCombinations,
+    testedCombinations: res.testedCombinations,
+    best: res.best,
+    rows: res.rows,
+  };
 }
 
 /** รายชื่อท่าสำหรับ UI (ไม่มีฟังก์ชัน) */

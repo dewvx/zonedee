@@ -21,6 +21,7 @@ export * from './backtest/engine';
 export * from './backtest/stats';
 export * from './backtest/baseline';
 export * from './backtest/run';
+export * from './backtest/grid-search';
 export * from './strategies';
 export * from './risk/r-multiple';
 export * from './indicators/sma';
