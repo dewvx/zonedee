@@ -931,6 +931,7 @@ export default function ChartView({ nav }: { nav?: ChartNav | null }) {
       <HotkeyHelpModal
         isOpen={hotkeyHelpOpen}
         onClose={() => setHotkeyHelpOpen(false)}
+        defaultTab="chart"
       />
     </div>
   );

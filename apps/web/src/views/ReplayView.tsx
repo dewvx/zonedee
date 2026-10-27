@@ -629,7 +629,11 @@ export default function ReplayView() {
         </div>
       </main>
 
-      <HotkeyHelpModal isOpen={hotkeyHelpOpen} onClose={() => setHotkeyHelpOpen(false)} />
+      <HotkeyHelpModal
+        isOpen={hotkeyHelpOpen}
+        onClose={() => setHotkeyHelpOpen(false)}
+        defaultTab="replay"
+      />
     </div>
   );
 }

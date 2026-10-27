@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon } from './Icon';
 
 interface HotkeyHelpModalProps {
   isOpen: boolean;
   onClose: () => void;
+  defaultTab?: 'all' | 'chart' | 'replay';
 }
 
 interface HotkeyItem {
@@ -36,7 +37,15 @@ const REPLAY_HOTKEYS: HotkeyItem[] = [
   { keys: ['R'], desc: 'สุ่มจุดเริ่มใหม่ (New Random Point)' },
 ];
 
-export function HotkeyHelpModal({ isOpen, onClose }: HotkeyHelpModalProps) {
+export function HotkeyHelpModal({ isOpen, onClose, defaultTab = 'all' }: HotkeyHelpModalProps) {
+  const [tab, setTab] = useState<'all' | 'chart' | 'replay'>(defaultTab);
+
+  useEffect(() => {
+    if (isOpen) {
+      setTab(defaultTab);
+    }
+  }, [isOpen, defaultTab]);
+
   useEffect(() => {
     if (!isOpen) return;
     const handleKey = (e: KeyboardEvent) => {
@@ -53,22 +62,22 @@ export function HotkeyHelpModal({ isOpen, onClose }: HotkeyHelpModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-12 backdrop-blur-[2px] sm:pt-20"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-[2px]"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl overflow-hidden rounded-xl border border-line bg-panel shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-2xl animate-in fade-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
+        <div className="shrink-0 flex items-center justify-between border-b border-line px-5 py-3">
           <div className="flex items-center gap-2.5">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-field text-accent">
-              <Icon name="keyboard" size={18} />
+              <Icon name="keyboard" size={17} />
             </span>
             <div>
               <h2 className="text-[15px] font-semibold text-fg">คีย์ลัดของระบบ (Keyboard Shortcuts)</h2>
-              <p className="text-xs text-muted">กดปุ่มบนแป้นพิมพ์เพื่อความสะดวกรวดเร็วโดยไม่ต้องละมือไปคลิกเมาส์</p>
+              <p className="text-[11px] text-muted">กดปุ่มบนแป้นพิมพ์เพื่อความสะดวกรวดเร็วโดยไม่ต้องละมือไปคลิกเมาส์</p>
             </div>
           </div>
           <button
@@ -81,70 +90,102 @@ export function HotkeyHelpModal({ isOpen, onClose }: HotkeyHelpModalProps) {
           </button>
         </div>
 
-        {/* Content */}
-        <div className="max-h-[75vh] overflow-y-auto p-5 space-y-6">
-          {/* Chart View Hotkeys */}
-          <div>
-            <h3 className="mb-2.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-accent">
-              <span>หน้าดูกราฟ (Chart View)</span>
-            </h3>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {CHART_HOTKEYS.map((item, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-line bg-field/30 px-3 py-2"
-                >
-                  <span className="text-xs text-fg-2">{item.desc}</span>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {item.keys.map((k) => (
-                      <kbd
-                        key={k}
-                        className="rounded border border-line bg-field px-1.5 py-0.5 font-mono text-[11px] font-semibold text-fg shadow-sm"
-                      >
-                        {k}
-                      </kbd>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Replay View Hotkeys */}
-          <div>
-            <h3 className="mb-2.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-accent">
-              <span>โหมดฝึก Replay (Replay Training View)</span>
-            </h3>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {REPLAY_HOTKEYS.map((item, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-line bg-field/30 px-3 py-2"
-                >
-                  <span className="text-xs text-fg-2">{item.desc}</span>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {item.keys.map((k) => (
-                      <kbd
-                        key={k}
-                        className="rounded border border-line bg-field px-1.5 py-0.5 font-mono text-[11px] font-semibold text-fg shadow-sm"
-                      >
-                        {k}
-                      </kbd>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+        {/* Tab Filter */}
+        <div className="shrink-0 flex items-center gap-2 border-b border-line bg-field/20 px-5 py-2">
+          <span className="text-xs text-muted">หมวดหมู่:</span>
+          <div className="seg text-xs" role="group" aria-label="Hotkey categories">
+            <button
+              type="button"
+              onClick={() => setTab('all')}
+              aria-pressed={tab === 'all'}
+            >
+              ทั้งหมด ({CHART_HOTKEYS.length + REPLAY_HOTKEYS.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('chart')}
+              aria-pressed={tab === 'chart'}
+            >
+              หน้าดูกราฟ ({CHART_HOTKEYS.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('replay')}
+              aria-pressed={tab === 'replay'}
+            >
+              โหมด Replay ({REPLAY_HOTKEYS.length})
+            </button>
           </div>
         </div>
 
+        {/* Content (Scrollable) */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-5">
+          {/* Chart View Hotkeys */}
+          {(tab === 'all' || tab === 'chart') && (
+            <div>
+              <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-accent">
+                <span>หน้าดูกราฟ (Chart View)</span>
+              </h3>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {CHART_HOTKEYS.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between gap-2.5 rounded-lg border border-line bg-field/30 px-3 py-1.5"
+                  >
+                    <span className="text-xs text-fg-2 leading-tight">{item.desc}</span>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {item.keys.map((k) => (
+                        <kbd
+                          key={k}
+                          className="rounded border border-line bg-field px-1.5 py-0.5 font-mono text-[10px] font-semibold text-fg shadow-sm"
+                        >
+                          {k}
+                        </kbd>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Replay View Hotkeys */}
+          {(tab === 'all' || tab === 'replay') && (
+            <div>
+              <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-accent">
+                <span>โหมดฝึก Replay (Replay Training View)</span>
+              </h3>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {REPLAY_HOTKEYS.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between gap-2.5 rounded-lg border border-line bg-field/30 px-3 py-1.5"
+                  >
+                    <span className="text-xs text-fg-2 leading-tight">{item.desc}</span>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {item.keys.map((k) => (
+                        <kbd
+                          key={k}
+                          className="rounded border border-line bg-field px-1.5 py-0.5 font-mono text-[10px] font-semibold text-fg shadow-sm"
+                        >
+                          {k}
+                        </kbd>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-line bg-field/40 px-5 py-3 text-xs text-muted">
-          <span>กด <kbd className="rounded border border-line bg-panel px-1 py-0.5 font-mono text-[10px] text-fg">?</kbd> หรือคลิกปุ่มคีย์ลัด เพื่อเปิดหน้านี้ได้ตลอดเวลา</span>
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-t border-line bg-field/40 px-5 py-2.5 text-xs text-muted">
+          <span>กด <kbd className="rounded border border-line bg-panel px-1 py-0.5 font-mono text-[10px] text-fg">?</kbd> บนคีย์บอร์ดเพื่อเปิด/ปิดหน้านี้ได้ทันที</span>
           <button
             type="button"
             onClick={onClose}
-            className="btn btn-primary text-xs px-3 py-1"
+            className="btn btn-primary text-xs px-3.5 py-1"
           >
             เข้าใจแล้ว
           </button>
