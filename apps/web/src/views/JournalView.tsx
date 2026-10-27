@@ -19,6 +19,7 @@ import {
 import { Icon } from '../components/Icon';
 import { Empty, Note, Stat } from '../components/ui';
 import { TradePreview } from '../components/TradePreview';
+import { JournalCalendar } from '../components/JournalCalendar';
 import { fmtPct, fmtR, formatThaiTime } from '../format';
 
 const STATUS_LABEL: Record<JournalStatus, string> = {
@@ -87,8 +88,24 @@ export default function JournalView() {
   const [saving, setSaving] = useState(false);
   const [statusFilter, setStatusFilter] = useState<JournalStatus | 'all'>('all');
   const [symbolFilter, setSymbolFilter] = useState('all');
-  const [preview, setPreview] = useState(false);
+  const [previewTrade, setPreviewTrade] = useState<JournalEntry | null>(null);
   const [bigImage, setBigImage] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>(() => {
+    try {
+      return (localStorage.getItem('zonedee:journal-view-mode') as 'list' | 'calendar') || 'list';
+    } catch {
+      return 'list';
+    }
+  });
+
+  const changeViewMode = (mode: 'list' | 'calendar') => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem('zonedee:journal-view-mode', mode);
+    } catch {
+      // ignore
+    }
+  };
 
   const reload = useCallback(
     () =>
@@ -228,6 +245,134 @@ export default function JournalView() {
   const symbolsInJournal = [...new Set(entries.map((e) => e.symbol))];
   const isKnownStrategy = !draft.strategy || strategies.some((s) => s.id === draft.strategy);
 
+  const openEditorPreview = () => {
+    if (!canPreview) return;
+    const draftTrade: JournalEntry = {
+      id: typeof selectedId === 'number' ? selectedId : 0,
+      createdAt: selected?.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
+      symbol: draft.symbol ?? 'XAUUSD',
+      tf: draft.tf ?? null,
+      direction: draft.direction ?? 'long',
+      status: draft.status ?? 'plan',
+      entryTime: draft.entryTime ?? null,
+      entryPrice: draft.entryPrice ?? null,
+      sl: draft.sl ?? null,
+      tp: draft.tp ?? null,
+      lots: draft.lots ?? null,
+      exitTime: draft.exitTime ?? null,
+      exitPrice: draft.exitPrice ?? null,
+      pnl: draft.pnl ?? null,
+      r: liveR ?? selected?.r ?? null,
+      strategy: draft.strategy ?? '',
+      signalTime: draft.signalTime ?? null,
+      setup: draft.setup ?? '',
+      lesson: draft.lesson ?? '',
+      emotion: draft.emotion ?? '',
+      followedPlan: draft.followedPlan ?? null,
+      tags: draft.tags ?? [],
+      images: selected?.images ?? [],
+    };
+    setPreviewTrade(draftTrade);
+  };
+
+  // ── มุมมองปฏิทิน (Trade Calendar) ──────────────────────────
+  if (viewMode === 'calendar') {
+    return (
+      <div className="flex h-full min-w-0 flex-col">
+        {/* Header แถบด้านบน */}
+        <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line bg-panel px-6 py-2.5">
+          <div className="flex items-center gap-3">
+            <div>
+              <h1 className="text-[15px] font-semibold leading-tight text-fg">Journal</h1>
+              <p className="text-xs text-muted">ปฏิทินบันทึกการเทรดรายเดือน (Trade Calendar)</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <div className="seg text-xs" role="group" aria-label="สลับมุมมอง">
+              <button
+                type="button"
+                onClick={() => changeViewMode('list')}
+                aria-pressed={false}
+              >
+                <Icon name="list" size={13} className="mr-1 inline-block" />
+                รายการ
+              </button>
+              <button
+                type="button"
+                onClick={() => changeViewMode('calendar')}
+                aria-pressed={true}
+              >
+                <Icon name="calendar" size={13} className="mr-1 inline-block" />
+                ปฏิทิน
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                select('new');
+                changeViewMode('list');
+              }}
+              className="btn btn-primary btn-sm ml-1"
+            >
+              <Icon name="plus" size={14} />
+              บันทึกใหม่
+            </button>
+          </div>
+        </header>
+
+        {/* Content ปฏิทิน */}
+        <main className="min-w-0 flex-1 overflow-y-auto p-6">
+          <div className="mx-auto max-w-6xl">
+            {error && <Note kind="bad">{error}</Note>}
+            <JournalCalendar
+              entries={entries}
+              strategies={strategies}
+              onSelectTrade={(id) => {
+                select(id);
+                changeViewMode('list');
+              }}
+              onPreviewTrade={(trade) => setPreviewTrade(trade)}
+              onNewTrade={() => {
+                select('new');
+                changeViewMode('list');
+              }}
+              onViewImage={(imgName) => setBigImage(imgName)}
+            />
+          </div>
+        </main>
+
+        {previewTrade && previewTrade.tf && previewTrade.entryTime && previewTrade.entryPrice != null && previewTrade.sl != null && previewTrade.tp != null && (
+          <TradePreview
+            symbol={previewTrade.symbol}
+            tf={previewTrade.tf}
+            digits={symbols.find((s) => s.symbol === previewTrade.symbol)?.digits ?? digits}
+            trade={{
+              direction: previewTrade.direction ?? 'long',
+              entryTime: previewTrade.entryTime,
+              exitTime: previewTrade.exitTime ?? null,
+              entry: previewTrade.entryPrice,
+              sl: previewTrade.sl,
+              tp: previewTrade.tp,
+              exit: previewTrade.exitPrice ?? null,
+              r: previewTrade.r,
+              title: `${previewTrade.symbol} ${previewTrade.tf}`,
+              subtitle: previewTrade.setup || undefined,
+            }}
+            onClose={() => setPreviewTrade(null)}
+          />
+        )}
+        {bigImage && (
+          <div className="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/80 p-6" onClick={() => setBigImage(null)}>
+            <img src={journalImageUrl(bigImage)} alt="" className="max-h-full max-w-full rounded border border-line" />
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-w-0">
       {/* ── รายการ ─────────────────────────────────────────── */}
@@ -241,6 +386,28 @@ export default function JournalView() {
             <button onClick={() => select('new')} className="btn btn-primary btn-sm ml-auto">
               <Icon name="plus" size={14} />
               บันทึกใหม่
+            </button>
+          </div>
+
+          {/* สลับมุมมอง รายการ vs ปฏิทิน */}
+          <div className="seg flex w-full" role="group" aria-label="สลับมุมมอง">
+            <button
+              type="button"
+              onClick={() => changeViewMode('list')}
+              aria-pressed={true}
+              className="flex-1 py-1 text-xs"
+            >
+              <Icon name="list" size={13} className="mr-1 inline-block" />
+              รายการ
+            </button>
+            <button
+              type="button"
+              onClick={() => changeViewMode('calendar')}
+              aria-pressed={false}
+              className="flex-1 py-1 text-xs"
+            >
+              <Icon name="calendar" size={13} className="mr-1 inline-block" />
+              ปฏิทิน
             </button>
           </div>
           <div className="grid grid-cols-3 gap-x-3 gap-y-3">
@@ -335,7 +502,7 @@ export default function JournalView() {
               {selected && <span className="text-xs text-faint">แก้ไขล่าสุด {formatThaiTime(selected.updatedAt)}</span>}
               <div className="ml-auto flex gap-2">
                 {canPreview && (
-                  <button onClick={() => setPreview(true)} className="btn btn-sm">
+                  <button onClick={openEditorPreview} className="btn btn-sm">
                     <Icon name="chart" size={14} />
                     ดูบนกราฟ
                   </button>
@@ -543,24 +710,24 @@ export default function JournalView() {
         )}
       </main>
 
-      {preview && canPreview && (
+      {previewTrade && previewTrade.tf && previewTrade.entryTime && previewTrade.entryPrice != null && previewTrade.sl != null && previewTrade.tp != null && (
         <TradePreview
-          symbol={draft.symbol!}
-          tf={draft.tf!}
-          digits={digits}
+          symbol={previewTrade.symbol}
+          tf={previewTrade.tf}
+          digits={symbols.find((s) => s.symbol === previewTrade.symbol)?.digits ?? digits}
           trade={{
-            direction: draft.direction ?? 'long',
-            entryTime: draft.entryTime!,
-            exitTime: draft.exitTime ?? null,
-            entry: draft.entryPrice!,
-            sl: draft.sl!,
-            tp: draft.tp!,
-            exit: draft.exitPrice ?? null,
-            r: liveR,
-            title: `${draft.symbol} ${draft.tf}`,
-            subtitle: draft.setup || undefined,
+            direction: previewTrade.direction ?? 'long',
+            entryTime: previewTrade.entryTime,
+            exitTime: previewTrade.exitTime ?? null,
+            entry: previewTrade.entryPrice,
+            sl: previewTrade.sl,
+            tp: previewTrade.tp,
+            exit: previewTrade.exitPrice ?? null,
+            r: previewTrade.r,
+            title: `${previewTrade.symbol} ${previewTrade.tf}`,
+            subtitle: previewTrade.setup || undefined,
           }}
-          onClose={() => setPreview(false)}
+          onClose={() => setPreviewTrade(null)}
         />
       )}
       {bigImage && (
