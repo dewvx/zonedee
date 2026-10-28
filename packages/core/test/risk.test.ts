@@ -132,6 +132,40 @@ describe('calcPosition', () => {
     expect(r.lots).toBe(2); // เสี่ยง $20 / $10 ต่อหุ้น
     expect(r.margin).toBeCloseTo(400);
   });
+
+  it('คำนวณ Swap ข้ามคืนต่อ 1 คืนปกติ และ 3-day swap วันพุธ', () => {
+    const goldWithSwap: ContractSpec = {
+      ...GOLD,
+      swapLong: -28.5,
+      swapShort: 14.2,
+      swapMode: 'points',
+    };
+    // Long 0.1 lot: swapLong = -28.5 points. 1 point = $1 ต่อ 1 lot.
+    // 0.1 lot: -28.5 * 1 * 0.1 = -$2.85 ต่อคืน
+    // คืนวันพุธ 3 เท่า: -$2.85 * 3 = -$8.55
+    const rLong = calcPosition({
+      spec: goldWithSwap,
+      balance: 10_000,
+      riskPct: 1, // เสี่ยง $100
+      entry: 2650,
+      sl: 2640, // 1000 points lossPerLot = 1000 -> 0.10 lot
+    });
+    expect(rLong.lots).toBe(0.1);
+    expect(rLong.swapPerNight).toBe(-2.85);
+    expect(rLong.swap3Day).toBe(-8.55);
+
+    // Short 0.1 lot: swapShort = +14.2 points -> +$1.42 ต่อคืน, พุธ +$4.26
+    const rShort = calcPosition({
+      spec: goldWithSwap,
+      balance: 10_000,
+      riskPct: 1,
+      entry: 2650,
+      sl: 2660,
+    });
+    expect(rShort.lots).toBe(0.1);
+    expect(rShort.swapPerNight).toBe(1.42);
+    expect(rShort.swap3Day).toBe(4.26);
+  });
 });
 
 

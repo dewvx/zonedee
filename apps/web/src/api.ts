@@ -137,6 +137,9 @@ export interface BacktestRequest {
   maxBarsInTrade?: number;
   oosFraction?: number;
   baselineRuns?: number;
+  enableSwap?: boolean;
+  swapLong?: number;
+  swapShort?: number;
 }
 
 export interface BacktestMeta {
@@ -149,6 +152,8 @@ export interface BacktestMeta {
   to: number | null;
   signals: number;
   spreadPoints: number;
+  swapLong?: number;
+  swapShort?: number;
   fineData: boolean;
   durationMs: number;
 }

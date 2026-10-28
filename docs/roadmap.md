@@ -38,4 +38,5 @@
 - [x] **ท่า 4 AMD (Accumulation, Manipulation, Distribution)** (`TASK-04`): จับช่วงสะสม Asian Session (00-07 UTC), London Manipulation Sweep (07-13 UTC), ยืนยันกลับตัว MSS / Reversal, เข้า Market/Limit, SL ปลายไส้ sweep, TP ฝั่งตรงข้ามของ Asian Range (หรือ R:R), พร้อมโหมด Rolling Consolidation สำหรับทุก TF/ตลาด
 - [x] **เครื่องมือจูนพารามิเตอร์อัตโนมัติ (Grid Search Optimization)** (`TASK-05`): รัน Backtest หลายตัวแปรพร้อมกัน (Cartesian Product), ประเมิน Expectancy, Win Rate, Max DD, Out-of-sample และ Random Baseline (Top 8), ไฮไลต์ชุดที่ดีที่สุดและมีนัยสำคัญทางสถิติ, รองรับทั้ง CLI (`--tune`, `--grid`) และหน้าเว็บ BacktestView พร้อมปุ่มนำค่าไปใส่ฟอร์มหรือรันทันที
 - ท่า 7 Trendline, ท่า 8 Power x Braron (รอนิยามเพิ่ม)
-- walk-forward / ทดสอบหลายคู่เงินพร้อมกัน (`TASK-07`), ต้นทุน swap ข้ามคืน (`TASK-06`)
+- [x] **คำนวณต้นทุน Swap ข้ามคืน (Overnight Swap)** (TASK-06): ดึงค่า Swap Long/Short และ Rollover 3-Day จาก MT5 Info และตารางสเปกมาตรฐาน XM, คำนวณ Rollover ข้ามคืน 21:00 UTC (17:00 NY) และ Triple Swap วันพุธ, แสดงพรีวิวต้นทุน Swap ต่อคืนในหน้าคำนวณ Lot (RiskPanel), และหักลบต้นทุน Swap ออกจากผลลัพธ์สุทธิ R และยอดเงินใน Backtest Engine พร้อมตัวเลือกปรับค่าในหน้าเว็บและ CLI
+- walk-forward / ทดสอบหลายคู่เงินพร้อมกัน (TASK-07)

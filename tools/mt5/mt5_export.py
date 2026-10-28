@@ -119,6 +119,15 @@ def info(symbol: str) -> None:
     if s is None:
         fail(f"อ่านข้อมูล symbol ไม่ได้ ({mt5.last_error()})", 6)
     account_currency = a.currency if a else "USD"
+    swap_mode_raw = getattr(s, "swap_mode", 1)
+    swap_mode = "points"
+    if swap_mode_raw == 0:
+        swap_mode = "disabled"
+    elif swap_mode_raw in (2, 3, 4):
+        swap_mode = "money"
+    elif swap_mode_raw in (5, 6):
+        swap_mode = "percent"
+
     print(
         json.dumps(
             {
@@ -136,6 +145,10 @@ def info(symbol: str) -> None:
                 "accountCurrency": account_currency,
                 "leverage": int(a.leverage) if a else None,
                 "balance": float(a.balance) if a else None,
+                "swapLong": float(getattr(s, "swap_long", 0.0) or 0.0),
+                "swapShort": float(getattr(s, "swap_short", 0.0) or 0.0),
+                "swapMode": swap_mode,
+                "swap3Day": int(getattr(s, "swap_rollover3days", 3) or 3),
             },
             ensure_ascii=False,
         )

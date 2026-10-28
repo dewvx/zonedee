@@ -219,25 +219,44 @@ ${newsListText}
       aiText = json?.content?.[0]?.text?.trim() ?? '';
     } else {
       const apiKey = process.env.GEMINI_API_KEY!;
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 600 },
-          }),
-        },
-      );
+      const candidateModels = [
+        process.env.GEMINI_MODEL,
+        'gemini-2.5-flash-lite',
+        'gemini-flash-lite-latest',
+        'gemini-3.1-flash-lite',
+        'gemini-1.5-flash',
+      ].filter(Boolean) as string[];
 
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        throw new Error(`Gemini API Error (${res.status}): ${errText.slice(0, 200)}`);
+      let lastErrorText = '';
+      for (const model of candidateModels) {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { temperature: 0.3, maxOutputTokens: 600 },
+            }),
+          },
+        );
+
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          lastErrorText = `Gemini API Error (${res.status}): ${errText.slice(0, 200)}`;
+          // ถ้าเป็น 404 (model ไม่พบหรือยกเลิกการรองรับ) ให้ลองรุ่นถัดไป
+          if (res.status === 404) continue;
+          throw new Error(lastErrorText);
+        }
+
+        const json = (await res.json()) as any;
+        aiText = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
+        if (aiText) break;
       }
 
-      const json = (await res.json()) as any;
-      aiText = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
+      if (!aiText && lastErrorText) {
+        throw new Error(lastErrorText);
+      }
     }
 
     if (!aiText) throw new Error(`ไม่ได้รับข้อความตอบกลับจาก ${provider === 'claude' ? 'Claude' : 'Gemini'} API`);

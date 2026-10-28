@@ -40,6 +40,7 @@ export function computeStats(trades: readonly Trade[], money: MoneyOptions): Sta
 
   const longs = trades.filter((t) => t.direction === 'long');
   const shorts = trades.filter((t) => t.direction === 'short');
+  const totalSwapR = trades.reduce((acc, t) => acc + (t.swapR ?? 0), 0);
   return {
     trades: trades.length,
     wins: wins.length,
@@ -59,6 +60,7 @@ export function computeStats(trades: readonly Trade[], money: MoneyOptions): Sta
     shortExpectancyR: mean(shorts.map((t) => t.r)),
     finalBalance: balance,
     maxDrawdownPct: maxDdPct,
+    totalSwapR,
   };
 }
 

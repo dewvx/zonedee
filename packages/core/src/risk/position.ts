@@ -3,6 +3,8 @@
  * lot = เงินที่ยอมเสีย ÷ (ระยะ SL × มูลค่าต่อ tick ต่อ 1 lot)
  */
 
+import { calcSwapCost } from './swap';
+
 export interface ContractSpec {
   symbol: string;
   /** หน่วยต่อ 1 lot เช่น EURUSD 100,000 · ทอง (XM) 100 oz · หุ้น 1 */
@@ -19,6 +21,14 @@ export interface ContractSpec {
   /** quote = margin คิดจากราคา (XXXUSD, ทอง) · base = สกุลหลักคือสกุลบัญชี (USDJPY) */
   marginMode: 'quote' | 'base';
   unit: 'lot' | 'share';
+  /** อัตรา Swap ฝั่ง Buy (points หรือตาม swapMode) */
+  swapLong?: number;
+  /** อัตรา Swap ฝั่ง Sell */
+  swapShort?: number;
+  /** โหมดคำนวณ swap: points, money, percent, disabled */
+  swapMode?: 'points' | 'money' | 'percent' | 'disabled';
+  /** วันที่คิด Swap 3 เท่า (ปกติคือ 3 = วันพุธ) */
+  swap3Day?: number;
 }
 
 export interface PositionInput {
@@ -60,6 +70,10 @@ export interface PositionResult {
   rr: number | null;
   profit: number | null;
   margin: number | null;
+  /** ต้นทุน/รายได้ Swap ต่อ 1 คืนปกติ (สกุลเงินบัญชี, ลบ = เสีย, บวก = ได้) */
+  swapPerNight: number | null;
+  /** ต้นทุน/รายได้ Swap ในคืนวันพุธ (Triple Swap) */
+  swap3Day: number | null;
 }
 
 /** ปัดลงให้เป็นทวีคูณของ step (กันทศนิยมเพี้ยน) */
@@ -118,6 +132,40 @@ export function calcPosition(input: PositionInput): PositionResult {
   if (rr !== null && errors.length === 0 && rr < minRR) warnings.push(`R:R 1:${rr.toFixed(2)} ต่ำกว่าขั้นต่ำ 1:${minRR}`);
   if (margin !== null && margin > balance) warnings.push('margin ที่ต้องใช้มากกว่ายอดเงินในบัญชี');
 
+  let swapPerNight: number | null = null;
+  let swap3DayCost: number | null = null;
+  if (lots > 0 && spec.swapLong !== undefined && spec.swapShort !== undefined && spec.swapMode !== 'disabled') {
+    const s1 = calcSwapCost({
+      direction,
+      lots,
+      effectiveNights: 1,
+      swapLong: spec.swapLong,
+      swapShort: spec.swapShort,
+      swapMode: spec.swapMode,
+      digits: spec.digits,
+      point,
+      tickSize: spec.tickSize,
+      tickValue: spec.tickValue,
+      price: entry,
+    });
+    swapPerNight = Number(s1.costInMoney.toFixed(2));
+
+    const s3 = calcSwapCost({
+      direction,
+      lots,
+      effectiveNights: 3,
+      swapLong: spec.swapLong,
+      swapShort: spec.swapShort,
+      swapMode: spec.swapMode,
+      digits: spec.digits,
+      point,
+      tickSize: spec.tickSize,
+      tickValue: spec.tickValue,
+      price: entry,
+    });
+    swap3DayCost = Number(s3.costInMoney.toFixed(2));
+  }
+
   return {
     valid: errors.length === 0,
     errors,
@@ -136,5 +184,7 @@ export function calcPosition(input: PositionInput): PositionResult {
     rr,
     profit,
     margin,
+    swapPerNight,
+    swap3Day: swap3DayCost,
   };
 }

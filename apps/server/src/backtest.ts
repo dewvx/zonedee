@@ -18,6 +18,7 @@ import {
 } from '@zonedee/core';
 import type { CandleStore } from './store';
 import type { SymbolConfig } from './symbols';
+import { STATIC } from './contract';
 
 /**
  * spread ทั่วไปของบัญชี XM Standard (points) — ค่าประมาณ ใช้เมื่อไม่ได้ระบุ
@@ -47,6 +48,12 @@ export interface BacktestRequest {
   oosFraction?: number;
   baselineRuns?: number;
   seed?: number;
+  /** คำนวณ Swap ข้ามคืนหรือไม่ (default true สำหรับ forex/ทอง) */
+  enableSwap?: boolean;
+  swapLong?: number;
+  swapShort?: number;
+  swapMode?: 'points' | 'money' | 'percent' | 'disabled';
+  swap3Day?: number;
 }
 
 export interface BacktestMeta {
@@ -59,6 +66,8 @@ export interface BacktestMeta {
   to: number | null;
   signals: number;
   spreadPoints: number;
+  swapLong?: number;
+  swapShort?: number;
   /** มีแท่ง M1 ไว้แยกแท่งที่โดนทั้ง SL/TP ไหม (D10) */
   fineData: boolean;
   durationMs: number;
@@ -121,6 +130,14 @@ interface Loaded {
   fine: Candle[] | null;
   spreadPoints: number;
   spread: number;
+  swap?: {
+    swapLong: number;
+    swapShort: number;
+    swapMode?: 'points' | 'money' | 'percent' | 'disabled';
+    swap3Day?: number;
+    digits?: number;
+    point?: number;
+  };
 }
 
 function load(store: CandleStore, cfg: SymbolConfig, req: BacktestRequest): Loaded {
@@ -147,7 +164,27 @@ function load(store: CandleStore, cfg: SymbolConfig, req: BacktestRequest): Load
   const spreadPoints = Number.isFinite(req.spreadPoints)
     ? Math.max(0, req.spreadPoints!)
     : (TYPICAL_SPREAD_POINTS[cfg.symbol] ?? 0);
-  return { tf, candles, fine, spreadPoints, spread: spreadPoints * 10 ** -cfg.digits };
+
+  let swap: Loaded['swap'] = undefined;
+  if (req.enableSwap !== false && cfg.market !== 'us-stock') {
+    const staticSpec = STATIC[cfg.symbol];
+    const swapLong = req.swapLong ?? staticSpec?.swapLong;
+    const swapShort = req.swapShort ?? staticSpec?.swapShort;
+    const swapMode = req.swapMode ?? staticSpec?.swapMode ?? 'points';
+    const swap3Day = req.swap3Day ?? staticSpec?.swap3Day ?? 3;
+    if (swapLong !== undefined && swapShort !== undefined && swapMode !== 'disabled') {
+      swap = {
+        swapLong,
+        swapShort,
+        swapMode,
+        swap3Day,
+        digits: cfg.digits,
+        point: 10 ** -cfg.digits,
+      };
+    }
+  }
+
+  return { tf, candles, fine, spreadPoints, spread: spreadPoints * 10 ** -cfg.digits, swap };
 }
 
 function runOne(d: Loaded, req: BacktestRequest, strategyId: string, params?: Record<string, ParamValue>) {
@@ -159,6 +196,7 @@ function runOne(d: Loaded, req: BacktestRequest, strategyId: string, params?: Re
     spread: d.spread,
     maxBarsInTrade: req.maxBarsInTrade ?? 0,
     fine: d.fine ? { candles: d.fine, tf: 'M1' } : undefined,
+    swap: d.swap,
     riskPct: req.riskPct ?? RUN_DEFAULTS.riskPct,
     initialBalance: req.initialBalance ?? RUN_DEFAULTS.initialBalance,
     oosFraction: req.oosFraction ?? RUN_DEFAULTS.oosFraction,
@@ -175,6 +213,8 @@ const baseMeta = (cfg: SymbolConfig, d: Loaded, started: number) => ({
   from: d.candles[0]?.time ?? null,
   to: d.candles.at(-1)?.time ?? null,
   spreadPoints: d.spreadPoints,
+  swapLong: d.swap?.swapLong,
+  swapShort: d.swap?.swapShort,
   fineData: d.fine !== null,
   durationMs: Date.now() - started,
 });
@@ -224,6 +264,7 @@ export function backtestTune(store: CandleStore, cfg: SymbolConfig, req: TuneReq
     spread: d.spread,
     maxBarsInTrade: req.maxBarsInTrade ?? 0,
     fine: d.fine ? { candles: d.fine, tf: 'M1' } : undefined,
+    swap: d.swap,
     riskPct: req.riskPct ?? RUN_DEFAULTS.riskPct,
     initialBalance: req.initialBalance ?? RUN_DEFAULTS.initialBalance,
     oosFraction: req.oosFraction ?? RUN_DEFAULTS.oosFraction,

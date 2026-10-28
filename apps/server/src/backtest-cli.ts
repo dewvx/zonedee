@@ -29,6 +29,7 @@ const { values } = parseArgs({
     risk: { type: 'string' },
     balance: { type: 'string' },
     swing: { type: 'string' },
+    'no-swap': { type: 'boolean', default: false },
     trades: { type: 'boolean', default: false },
   },
 });
@@ -81,6 +82,7 @@ const req = {
   spreadPoints: values.spread !== undefined ? Number(values.spread) : undefined,
   riskPct: values.risk ? Number(values.risk) : undefined,
   initialBalance: values.balance ? Number(values.balance) : undefined,
+  enableSwap: !values['no-swap'],
 };
 
 const f = (x: number, d = 2) => (Number.isFinite(x) ? x.toFixed(d) : '-');
@@ -125,9 +127,11 @@ try {
     }
   } else {
     const { meta, result } = backtestOne(store, cfg, req);
+    const swapInfo = meta.swapLong !== undefined ? ` · swap long ${meta.swapLong}/short ${meta.swapShort} pt` : '';
     console.log(`\n${meta.strategyName} · ${meta.symbol} ${meta.tf} · ${meta.bars.toLocaleString()} แท่ง (${day(meta.from)} → ${day(meta.to)} UTC)`);
-    console.log(`spread ${meta.spreadPoints} pt · M1 แยก SL/TP: ${meta.fineData ? 'มี' : 'ไม่มี (นับเป็น SL)'} · สัญญาณ ${meta.signals} (ข้าม ${result.skipped}) · ${meta.durationMs} ms\n`);
-    console.log(`ทั้งหมด      ${line(result.stats)}`);
+    console.log(`spread ${meta.spreadPoints} pt${swapInfo} · M1 แยก SL/TP: ${meta.fineData ? 'มี' : 'ไม่มี (นับเป็น SL)'} · สัญญาณ ${meta.signals} (ข้าม ${result.skipped}) · ${meta.durationMs} ms\n`);
+    const swapStat = result.stats.totalSwapR ? ` (หัก swap ${f(result.stats.totalSwapR, 2)}R)` : '';
+    console.log(`ทั้งหมด      ${line(result.stats)}${swapStat}`);
     console.log(`in-sample    ${line(result.inSample)}`);
     console.log(`out-sample   ${line(result.outOfSample)}  (ตั้งแต่ ${day(result.splitTime)})`);
     if (result.baseline) {
@@ -138,8 +142,10 @@ try {
     if (result.stats.trades < 100) console.log('\n⚠ น้อยกว่า 100 เทรด — ยังสรุปอะไรไม่ได้ (ดู docs/rules.md)');
     if (values.trades) {
       console.log('');
-      for (const t of result.trades)
-        console.log(`${day(t.entryTime)} ${t.direction.padEnd(5)} ${f(t.entry, cfg.digits)} → ${f(t.exit, cfg.digits)} ${t.exitReason.padEnd(4)} ${f(t.r).padStart(6)}R  ${t.reason}`);
+      for (const t of result.trades) {
+        const nightStr = t.holdingNights ? ` [${t.holdingNights}n${t.swapR !== undefined ? ` ${f(t.swapR, 2)}R` : ''}]` : '';
+        console.log(`${day(t.entryTime)} ${t.direction.padEnd(5)} ${f(t.entry, cfg.digits)} → ${f(t.exit, cfg.digits)} ${t.exitReason.padEnd(4)} ${f(t.r).padStart(6)}R${nightStr}  ${t.reason}`);
+      }
     }
   }
 } catch (err) {

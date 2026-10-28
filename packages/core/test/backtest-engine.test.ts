@@ -273,3 +273,95 @@ describe('runBacktest', () => {
     expect(res.baseline?.runs).toBe(20);
   });
 });
+
+describe('simulate — overnight swap', () => {
+  it('ไม้ที่ถือข้ามคืน 21:00 UTC หักลบค่า Swap ออกจาก R', () => {
+    // จันทร์ 15:00 UTC (12 Oct 2026)
+    const mon15 = Date.UTC(2026, 9, 12, 15, 0, 0);
+    const mon18 = Date.UTC(2026, 9, 12, 18, 0, 0);
+    // อังคาร 08:00 UTC (13 Oct 2026) — ข้าม 21:00 UTC
+    const tue08 = Date.UTC(2026, 9, 13, 8, 0, 0);
+
+    const testCandles: Candle[] = [
+      { time: mon15, open: 2650, high: 2652, low: 2648, close: 2650, volume: 10 }, // 0: signal
+      { time: mon18, open: 2650, high: 2655, low: 2649, close: 2652, volume: 10 }, // 1: entry 2650
+      { time: tue08, open: 2655, high: 2675, low: 2654, close: 2672, volume: 10 }, // 2: hit TP 2670
+    ];
+
+    const sig: Signal = {
+      index: 0,
+      direction: 'long',
+      entryType: 'market',
+      entry: 2650,
+      sl: 2640, // risk = 10
+      tp: 2670, // gross = +2R
+      reason: 'test swap',
+    };
+
+    const { trades } = simulate(testCandles, [sig], {
+      tf: 'H4',
+      swap: {
+        swapLong: -28.5,
+        swapShort: 14.2,
+        swapMode: 'points',
+        point: 0.01,
+        digits: 2,
+      },
+    });
+
+    expect(trades).toHaveLength(1);
+    const t = trades[0]!;
+    expect(t.holdingNights).toBe(1);
+    expect(t.effectiveNights).toBe(1);
+    expect(t.grossR).toBeCloseTo(2.0);
+    // Swap cost in points = -28.5 pt -> in price = -0.285 -> in R = -0.285 / 10 = -0.0285 R
+    expect(t.swapR).toBeCloseTo(-0.0285);
+    expect(t.r).toBeCloseTo(2.0 - 0.0285);
+
+    // ตรวจสอบใน computeStats
+    const stats = computeStats(trades, { riskPct: 1, initialBalance: 1000 });
+    expect(stats.totalSwapR).toBeCloseTo(-0.0285);
+  });
+
+  it('ไม้ที่ถือข้ามคืนวันพุธ คิด Triple Swap (3 เท่า)', () => {
+    // พุธ 18:00 UTC (14 Oct 2026) -> พฤหัสบดี 08:00 UTC (15 Oct 2026)
+    const wed18 = Date.UTC(2026, 9, 14, 18, 0, 0);
+    const wed20 = Date.UTC(2026, 9, 14, 20, 0, 0);
+    const thu08 = Date.UTC(2026, 9, 15, 8, 0, 0);
+
+    const testCandles: Candle[] = [
+      { time: wed18, open: 2650, high: 2652, low: 2648, close: 2650, volume: 10 },
+      { time: wed20, open: 2650, high: 2655, low: 2649, close: 2652, volume: 10 },
+      { time: thu08, open: 2655, high: 2675, low: 2654, close: 2672, volume: 10 },
+    ];
+
+    const sig: Signal = {
+      index: 0,
+      direction: 'long',
+      entryType: 'market',
+      entry: 2650,
+      sl: 2640,
+      tp: 2670,
+      reason: 'test wednesday triple swap',
+    };
+
+    const { trades } = simulate(testCandles, [sig], {
+      tf: 'H4',
+      swap: {
+        swapLong: -28.5,
+        swapShort: 14.2,
+        swapMode: 'points',
+        point: 0.01,
+        digits: 2,
+      },
+    });
+
+    expect(trades).toHaveLength(1);
+    const t = trades[0]!;
+    expect(t.holdingNights).toBe(1);
+    expect(t.effectiveNights).toBe(3);
+    // 3 nights * (-28.5 pt) = -85.5 pt -> in price = -0.855 -> in R = -0.855 / 10 = -0.0855 R
+    expect(t.swapR).toBeCloseTo(-0.0855);
+    expect(t.r).toBeCloseTo(2.0 - 0.0855);
+  });
+});

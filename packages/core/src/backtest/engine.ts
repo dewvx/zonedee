@@ -1,4 +1,5 @@
 import { TIMEFRAME_MS, type Candle } from '../types';
+import { calcSwapCost } from '../risk/swap';
 import type { BacktestOptions, ExitReason, Signal, Trade } from './types';
 
 const DEFAULT_EXPIRY = 50;
@@ -139,13 +140,50 @@ export function simulateOrder(
   }
 
   const risk = Math.abs(entry - s.sl);
-  const r = risk > 0 ? (isLong ? exit - entry : entry - exit) / risk : 0;
+  const grossR = risk > 0 ? (isLong ? exit - entry : entry - exit) / risk : 0;
+  let r = grossR;
+  let holdingNights: number | undefined;
+  let effectiveNights: number | undefined;
+  let swapR: number | undefined;
+  let swapPoints: number | undefined;
+
+  const entryTime = candles[entryIndex]!.time;
+  const exitTime = candles[exitIndex]!.time;
+
+  if (opts.swap && opts.swap.swapMode !== 'disabled') {
+    const swapRes = calcSwapCost({
+      direction: s.direction,
+      lots: 1,
+      entryTime,
+      exitTime,
+      swapLong: opts.swap.swapLong,
+      swapShort: opts.swap.swapShort,
+      swapMode: opts.swap.swapMode,
+      swap3Day: opts.swap.swap3Day,
+      digits: opts.swap.digits,
+      point: opts.swap.point,
+      tickSize: opts.swap.tickSize,
+      tickValue: opts.swap.tickValue,
+      rolloverHourUtc: opts.swap.rolloverHourUtc,
+      price: entry,
+    });
+
+    holdingNights = swapRes.nights;
+    effectiveNights = swapRes.effectiveNights;
+    swapPoints = swapRes.costInPoints;
+
+    const point = opts.swap.point ?? (opts.swap.digits !== undefined ? 10 ** -opts.swap.digits : 0.01);
+    const swapPriceDiff = swapRes.costInPoints * point;
+    swapR = risk > 0 ? swapPriceDiff / risk : 0;
+    r = grossR + swapR;
+  }
+
   const trade: Trade = {
     signalIndex: s.index,
     entryIndex,
     exitIndex,
-    entryTime: candles[entryIndex]!.time,
-    exitTime: candles[exitIndex]!.time,
+    entryTime,
+    exitTime,
     direction: s.direction,
     entry,
     sl: s.sl,
@@ -153,6 +191,11 @@ export function simulateOrder(
     exit,
     exitReason,
     r,
+    grossR,
+    holdingNights,
+    effectiveNights,
+    swapR,
+    swapPoints,
     barsHeld: exitIndex - entryIndex + 1,
     reason: s.reason,
   };

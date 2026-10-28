@@ -14,6 +14,7 @@ export * from './structure/order-blocks';
 export * from './structure/fvg';
 export * from './structure/sweeps';
 export * from './risk/position';
+export * from './risk/swap';
 export * from './random';
 export * from './mtf';
 export * from './backtest/types';

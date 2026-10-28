@@ -57,9 +57,11 @@ class _Info:
 
 _SPECS = {
     "GOLD": dict(trade_contract_size=100.0, trade_tick_size=0.01, trade_tick_value=1.0, volume_min=0.01,
-                 volume_step=0.01, volume_max=50.0, digits=2, currency_base="XAU", currency_profit="USD", spread=25),
+                 volume_step=0.01, volume_max=50.0, digits=2, currency_base="XAU", currency_profit="USD", spread=25,
+                 swap_long=-28.5, swap_short=14.2, swap_mode=1, swap_rollover3days=3),
     "EURUSD": dict(trade_contract_size=100000.0, trade_tick_size=0.00001, trade_tick_value=1.0, volume_min=0.01,
-                   volume_step=0.01, volume_max=50.0, digits=5, currency_base="EUR", currency_profit="USD", spread=8),
+                   volume_step=0.01, volume_max=50.0, digits=5, currency_base="EUR", currency_profit="USD", spread=8,
+                   swap_long=-6.8, swap_short=2.5, swap_mode=1, swap_rollover3days=3),
 }
 
 

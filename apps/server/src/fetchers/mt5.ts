@@ -87,6 +87,10 @@ export interface Mt5SymbolInfo {
   accountCurrency: string;
   leverage: number | null;
   balance: number | null;
+  swapLong?: number;
+  swapShort?: number;
+  swapMode?: 'points' | 'money' | 'percent' | 'disabled';
+  swap3Day?: number;
 }
 
 /** สเปกสัญญา + leverage + ยอดเงินจากบัญชี MT5 ที่ login อยู่ */

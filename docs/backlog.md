@@ -143,14 +143,21 @@
 
 ---
 
-### TASK-06: คำนวณต้นทุน Swap ข้ามคืน (Overnight Swap)
+### TASK-06: คำนวณต้นทุน Swap ข้ามคืน (Overnight Swap) [เสร็จสมบูรณ์]
 - **เป้าหมาย**: เพิ่มความแม่นยำในการคำนวณกำไร/ขาดทุนสุทธิกรณีถือออเดอร์ข้ามวัน
 - **ข้อกำหนด (Specs)**:
-  1. ดึงค่า `swapLong`, `swapShort`, และ `swapType` จาก MT5 Info ผ่าน [`apps/server/src/contract.ts`](file:///d:/zonedee/apps/server/src/contract.ts)
-  2. คำนวณดอกเบี้ย Swap ตามจำนวนคืนที่ถือ (รวมการคิด 3-Day Swap ในคืนวันพุธสำหรับ Forex/ทอง)
-  3. สะท้อนในหน้าคำนวณ Lot (`RiskPanel.tsx`) และใน Backtest Engine
-- **เกณฑ์การตรวจรับ**:
-  - ไม้ที่ถือข้ามวันมีค่า Swap หักลบจากผลลัพธ์ R หรือยอดเงินตามความเป็นจริง
+  1. ดึงค่า swapLong, swapShort, swapMode, และ swap3Day จาก MT5 Info ผ่าน tools/mt5/mt5_export.py และ apps/server/src/contract.ts (พร้อมค่า default มาตรฐาน XM ใน STATIC)
+  2. คำนวณดอกเบี้ย Swap ตามจำนวนคืนที่ถือข้าม 21:00 UTC (17:00 NY) รวมการคิด 3-Day Triple Swap ในคืนวันพุธสำหรับ Forex/ทอง
+  3. สะท้อนในหน้าคำนวณ Lot (RiskPanel.tsx) แสดงพรีวิว swapPerNight และ swap3Day
+  4. ใน Backtest Engine (packages/core/src/backtest/) หักลบ swap ออกจาก gross R และ balance บันทึก holdingNights, effectiveNights, swapR และแสดงผลใน BacktestView พร้อมสวิตช์เปิด/ปิดและปรับค่า points
+- **ไฟล์ที่สร้าง/แก้ไข**:
+  - packages/core/src/risk/swap.ts: เอนจิน calcOvernightNights และ calcSwapCost
+  - packages/core/test/swap.test.ts: Unit tests 5 ข้อครอบคลุม intraday, คืนปกติ, Triple Swap วันพุธ, ข้ามสัปดาห์, positive swap
+  - packages/core/src/risk/position.ts & test/risk.test.ts: เพิ่ม swap ใน ContractSpec และ PositionResult
+  - packages/core/src/backtest/engine.ts & stats.ts & types.ts: simulateOrder คิด swap หักออกจาก gross R และคำนวณ totalSwapR
+  - tools/mt5/mt5_export.py & apps/server/src/contract.ts: ดึงและ map ค่า swap XM
+  - apps/web/src/components/RiskPanel.tsx: แถว Swap ข้ามคืนพร้อมระบุค่าวันพุธ
+  - apps/web/src/views/BacktestView.tsx: ฟิลด์ตั้งค่า swap ใน sidebar, ชิปแสดงคืนและ swap R ในตารางเทรด
 
 ---
 

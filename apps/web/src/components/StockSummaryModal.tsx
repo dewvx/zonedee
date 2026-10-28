@@ -259,7 +259,7 @@ export function StockSummaryModal({
                     <Icon name="sparkles" size={14} className="text-accent" />
                     <span className="text-xs font-semibold text-accent">บทวิเคราะห์ข่าวเชิงลึกโดย AI</span>
                     <span className="badge bg-panel text-[10px] text-muted border border-line">
-                      {news.aiProvider === 'claude' ? 'Claude 3.5' : 'Gemini 1.5'}
+                      {news.aiProvider === 'claude' ? 'Claude 3.5' : 'Gemini'}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">

@@ -37,6 +37,9 @@ interface BtSettings {
   oosPct: number;
   baselineRuns: number;
   maxBarsInTrade: number;
+  enableSwap: boolean;
+  swapLong: number | null;
+  swapShort: number | null;
 }
 
 const KEY = 'zonedee:backtest';
@@ -54,6 +57,9 @@ const DEFAULT_BT: BtSettings = {
   oosPct: 30,
   baselineRuns: 200,
   maxBarsInTrade: 0,
+  enableSwap: true,
+  swapLong: null,
+  swapShort: null,
 };
 
 function loadBt(): BtSettings {
@@ -198,6 +204,9 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
     maxBarsInTrade: s.maxBarsInTrade,
     oosFraction: s.oosPct / 100,
     baselineRuns: s.baselineRuns,
+    enableSwap: s.enableSwap,
+    swapLong: s.swapLong ?? undefined,
+    swapShort: s.swapShort ?? undefined,
   });
 
   const run = async (mode: 'single' | 'compare', strategyId = strat?.id) => {
@@ -291,6 +300,9 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
             maxBarsInTrade: nextS.maxBarsInTrade,
             oosFraction: nextS.oosPct / 100,
             baselineRuns: nextS.baselineRuns,
+            enableSwap: nextS.enableSwap,
+            swapLong: nextS.swapLong ?? undefined,
+            swapShort: nextS.swapShort ?? undefined,
           };
           const res = await runBacktest(req);
           setSingle(res);
@@ -471,6 +483,44 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
             <Field label="ถือสูงสุด (แท่ง)" title="ปิดสถานะเมื่อถือครบกี่แท่ง (0 = ไม่จำกัด)">
               <input type="number" min={0} value={s.maxBarsInTrade} onChange={(e) => update({ maxBarsInTrade: Math.max(0, e.target.valueAsNumber || 0) })} className="field tabular-nums" />
             </Field>
+          </div>
+          <div className="border-t border-line/60 pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-fg">คิด Swap ข้ามคืน</span>
+              <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+                <input
+                  type="checkbox"
+                  checked={s.enableSwap}
+                  onChange={(e) => update({ enableSwap: e.target.checked })}
+                  className="accent-accent"
+                />
+                <span className="text-muted">{s.enableSwap ? 'เปิด' : 'ปิด'}</span>
+              </label>
+            </div>
+            {s.enableSwap && (
+              <div className="mt-2.5 grid grid-cols-2 gap-3">
+                <Field label="Swap Long (pt)" title="อัตรา Swap ฝั่ง Buy (ว่าง = ค่ามาตรฐาน XM)">
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder="มาตรฐาน XM"
+                    value={s.swapLong ?? ''}
+                    onChange={(e) => update({ swapLong: e.target.value === '' ? null : Number(e.target.value) })}
+                    className="field tabular-nums"
+                  />
+                </Field>
+                <Field label="Swap Short (pt)" title="อัตรา Swap ฝั่ง Sell (ว่าง = ค่ามาตรฐาน XM)">
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder="มาตรฐาน XM"
+                    value={s.swapShort ?? ''}
+                    onChange={(e) => update({ swapShort: e.target.value === '' ? null : Number(e.target.value) })}
+                    className="field tabular-nums"
+                  />
+                </Field>
+              </div>
+            )}
           </div>
         </Section>
 
@@ -771,6 +821,7 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
                       ['ช่วง', `${single.meta.from ? formatThaiDate(single.meta.from) : ''} – ${single.meta.to ? formatThaiDate(single.meta.to) : ''}`],
                       ['สัญญาณ', `${single.meta.signals} (ข้าม ${r.skipped})`],
                       ['spread', `${single.meta.spreadPoints} pt`],
+                      ['swap', single.meta.swapLong !== undefined ? `Buy ${single.meta.swapLong} / Sell ${single.meta.swapShort} pt` : 'ไม่คิด'],
                       ['แยก SL/TP ด้วย M1', single.meta.fineData ? 'มี' : 'ไม่มี'],
                     ]}
                   />
@@ -792,7 +843,7 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
                   label="เฉลี่ยต่อไม้"
                   value={r.stats.trades ? fmtR(r.stats.expectancyR) : '-'}
                   tone={r.stats.expectancyR > 0 ? 'up' : r.stats.expectancyR < 0 ? 'down' : undefined}
-                  sub={`ชนะ ${fmtR(r.stats.avgWinR, 1)} แพ้ ${fmtR(r.stats.avgLossR, 1)}`}
+                  sub={`ชนะ ${fmtR(r.stats.avgWinR, 1)} แพ้ ${fmtR(r.stats.avgLossR, 1)}${r.stats.totalSwapR ? ` · swap ${fmtR(r.stats.totalSwapR, 2)}R` : ''}`}
                 />
                 <Stat label="รวม" value={fmtR(r.stats.totalR, 1)} tone={r.stats.totalR > 0 ? 'up' : r.stats.totalR < 0 ? 'down' : undefined} />
                 <Stat label="Profit factor" value={pf(r.stats)} />
@@ -924,7 +975,17 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
                         <td className="text-right tabular-nums">
                           {t.exit.toFixed(digits)} <span className="text-xs text-faint">{t.exitReason.toUpperCase()}</span>
                         </td>
-                        <td className={`text-right font-medium tabular-nums ${t.r > 0 ? 'text-bull' : 'text-bear'}`}>{fmtR(t.r)}</td>
+                        <td className={`text-right font-medium tabular-nums ${t.r > 0 ? 'text-bull' : 'text-bear'}`}>
+                          <div>{fmtR(t.r)}</div>
+                          {t.holdingNights && t.holdingNights > 0 ? (
+                            <div
+                              className="text-[11px] font-normal text-muted"
+                              title={`ถือ ${t.holdingNights} คืน (คิด ${t.effectiveNights} คืน) ${t.swapR !== undefined ? `Swap: ${fmtR(t.swapR)}` : ''}`}
+                            >
+                              {t.holdingNights} คืน ({t.swapR !== undefined && t.swapR > 0 ? '+' : ''}{t.swapR !== undefined ? fmtR(t.swapR) : ''})
+                            </div>
+                          ) : null}
+                        </td>
                         <td className="max-w-[26rem] truncate pr-5 text-muted" title={t.reason}>
                           {t.reason}
                         </td>
@@ -950,7 +1011,11 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
           symbol={single.meta.symbol}
           tf={single.meta.tf}
           digits={digits}
-          trade={{ ...sel, title: `${single.meta.symbol} ${single.meta.tf}`, subtitle: sel.reason }}
+          trade={{
+            ...sel,
+            title: `${single.meta.symbol} ${single.meta.tf}`,
+            subtitle: `${sel.reason}${sel.holdingNights ? ` · ถือ ${sel.holdingNights} คืน (Swap: ${sel.swapR !== undefined && sel.swapR > 0 ? '+' : ''}${sel.swapR !== undefined ? fmtR(sel.swapR) : ''})` : ''}`,
+          }}
           onClose={() => setSelected(null)}
           onPrev={selected! > 0 ? () => setSelected((k) => (k ?? 1) - 1) : undefined}
           onNext={selected! < trades.length - 1 ? () => setSelected((k) => (k ?? 0) + 1) : undefined}

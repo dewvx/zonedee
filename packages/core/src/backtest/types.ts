@@ -31,10 +31,32 @@ export interface Trade {
   tp: number;
   exit: number;
   exitReason: ExitReason;
-  /** กำไร/ขาดทุนเป็นเท่าของความเสี่ยง (1R = ระยะ entry→SL) */
+  /** กำไร/ขาดทุนสุทธิเป็นเท่าของความเสี่ยง (1R = ระยะ entry→SL) รวมหักต้นทุน swap แล้ว */
   r: number;
+  /** กำไร/ขาดทุนเป็น R ก่อนหัก swap */
+  grossR?: number;
+  /** จำนวนคืนที่ถือข้าม */
+  holdingNights?: number;
+  /** จำนวนคืนที่มีผลคำนวณ swap (รวม 3-day swap วันพุธ) */
+  effectiveNights?: number;
+  /** ผลกระทบของ swap ในรูปหน่วย R (ลบ = ต้นทุน, บวก = ได้รับ) */
+  swapR?: number;
+  /** ผลกระทบของ swap ในหน่วย points */
+  swapPoints?: number;
   barsHeld: number;
   reason: string;
+}
+
+export interface BacktestSwapOptions {
+  swapLong: number;
+  swapShort: number;
+  swapMode?: 'points' | 'money' | 'percent' | 'disabled';
+  swap3Day?: number;
+  digits?: number;
+  point?: number;
+  tickSize?: number;
+  tickValue?: number;
+  rolloverHourUtc?: number;
 }
 
 export interface BacktestOptions {
@@ -45,6 +67,8 @@ export interface BacktestOptions {
   maxBarsInTrade?: number;
   /** แท่ง TF ละเอียด (M1) ไว้แยกว่าแท่งที่โดนทั้ง SL และ TP อันไหนโดนก่อน */
   fine?: { candles: readonly Candle[]; tf: Timeframe };
+  /** ตั้งค่าคำนวณ swap ข้ามคืน (ถ้าไม่ระบุ = ไม่คิด swap) */
+  swap?: BacktestSwapOptions;
 }
 
 export interface Stats {
@@ -69,6 +93,8 @@ export interface Stats {
   /** ยอดเงินสุดท้ายถ้าเสี่ยงคงที่ riskPct% ของยอดปัจจุบันต่อไม้ (ทบต้น) */
   finalBalance: number;
   maxDrawdownPct: number;
+  /** Swap รวมทั้งหมดตลอดช่วง backtest ในรูป R */
+  totalSwapR?: number;
 }
 
 export interface EquityPoint {

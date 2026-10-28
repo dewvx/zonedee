@@ -238,6 +238,21 @@ export function RiskPanel(p: Props) {
                   </>
                 )}
                 {r.margin !== null && <Row label={unit === 'หุ้น' ? 'เงินที่ใช้ซื้อ' : 'Margin ที่ใช้'}>{fmtMoney(r.margin, cur)}</Row>}
+                {r.swapPerNight !== null && (
+                  <Row
+                    label="Swap ข้ามคืน"
+                    tone={r.swapPerNight > 0 ? 'good' : r.swapPerNight < 0 ? 'bad' : 'muted'}
+                  >
+                    <span>
+                      {r.swapPerNight > 0 ? '+' : ''}{fmtMoney(r.swapPerNight, cur)} / คืน
+                      {r.swap3Day !== null && (
+                        <span className="ml-1 text-[11px] text-muted">
+                          (พุธ {r.swap3Day > 0 ? '+' : ''}{fmtMoney(r.swap3Day, cur)})
+                        </span>
+                      )}
+                    </span>
+                  </Row>
+                )}
                 {p.effective.spreadPoints > 0 && (
                   <Row label="นับ spread รวมแล้ว" tone="muted">
                     {p.effective.spreadPoints} points
@@ -259,6 +274,12 @@ export function RiskPanel(p: Props) {
           <>
             สเปกสัญญา: {contract.source === 'mt5' ? 'จาก MT5 (บัญชีของคุณ)' : 'ค่ามาตรฐาน'} · 1 {unit} ={' '}
             {contract.spec.contractSize.toLocaleString()} หน่วย · ขั้นต่ำ {contract.spec.volumeMin}
+            {contract.spec.swapLong !== undefined && contract.spec.swapShort !== undefined && (
+              <div className="mt-0.5 text-muted">
+                Swap: Buy {contract.spec.swapLong > 0 ? `+${contract.spec.swapLong}` : contract.spec.swapLong} · Sell{' '}
+                {contract.spec.swapShort > 0 ? `+${contract.spec.swapShort}` : contract.spec.swapShort} pt
+              </div>
+            )}
             {contract.note && <div className="mt-1 text-warn">{contract.note}</div>}
           </>
         )}

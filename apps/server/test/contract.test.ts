@@ -56,6 +56,8 @@ describe('contract specs', () => {
 
   it('static XAUUSD ใช้กับเครื่องคิดได้ (ตัวอย่างทอง SL $3)', () => {
     const { spec } = staticContract(findSymbol('XAUUSD')!, 4621);
+    expect(spec.swapLong).toBe(-28.5);
+    expect(spec.swapShort).toBe(14.2);
     expect(calcPosition({ spec, balance: 1000, riskPct: 1, entry: 4621, sl: 4618 }).lots).toBe(0.03);
   });
 
@@ -90,6 +92,16 @@ describe.skipIf(!hasPython)('mt5_export.py --info (MetaTrader5 ปลอม)', (
       encoding: 'utf8',
     });
     const info = JSON.parse(out) as Mt5SymbolInfo;
-    expect(info).toMatchObject({ contractSize: 100, tickSize: 0.01, tickValue: 1, leverage: 1000, balance: 10000 });
+    expect(info).toMatchObject({
+      contractSize: 100,
+      tickSize: 0.01,
+      tickValue: 1,
+      leverage: 1000,
+      balance: 10000,
+      swapLong: -28.5,
+      swapShort: 14.2,
+      swapMode: 'points',
+      swap3Day: 3,
+    });
   });
 });
