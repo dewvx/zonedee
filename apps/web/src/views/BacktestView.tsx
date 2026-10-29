@@ -11,6 +11,10 @@ import {
   type StrategyInfo,
   type SymbolSummary,
   type TuneResponse,
+  type WalkForwardResponse,
+  type MultiPairResponse,
+  runWalkForwardApi,
+  runMultiPairApi,
 } from '../api';
 import { EquityChart } from '../components/EquityChart';
 import { ParamForm } from '../components/ParamForm';
@@ -192,6 +196,78 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
   const [filter, setFilter] = useState<TradeFilter>('all');
   const [shown, setShown] = useState(200);
   const [selected, setSelected] = useState<number | null>(null);
+  const [wfRunning, setWfRunning] = useState(false);
+  const [wfResult, setWfResult] = useState<WalkForwardResponse | null>(null);
+  const [wfWindows, setWfWindows] = useState(4);
+  const [wfTrainDays, setWfTrainDays] = useState<number | null>(null);
+  const [wfTestDays, setWfTestDays] = useState<number | null>(null);
+
+  const [mpRunning, setMpRunning] = useState(false);
+  const [mpResult, setMpResult] = useState<MultiPairResponse | null>(null);
+  const [mpSymbols, setMpSymbols] = useState<string[]>(['XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY']);
+
+  const handleRunWf = async () => {
+    if (!strat) return;
+    setWfRunning(true);
+    setError(null);
+    setTuneNotice(null);
+    try {
+      const res = await runWalkForwardApi({
+        ...request(),
+        strategy: strat.id,
+        params: s.params[strat.id] ?? {},
+        windowsCount: wfWindows,
+        trainDays: wfTrainDays ?? undefined,
+        testDays: wfTestDays ?? undefined,
+      });
+      setWfResult(res);
+      setSingle(null);
+      setCompare(null);
+      setTuneResult(null);
+      setMpResult(null);
+      setSelected(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setWfRunning(false);
+    }
+  };
+
+  const handleRunMp = async () => {
+    if (!strat) return;
+    if (mpSymbols.length === 0) {
+      setError('กรุณาเลือกอย่างน้อย 1 คู่เงินสำหรับ Multi-Pair');
+      return;
+    }
+    setMpRunning(true);
+    setError(null);
+    setTuneNotice(null);
+    try {
+      const res = await runMultiPairApi({
+        symbols: mpSymbols,
+        tf: s.tf,
+        strategy: strat.id,
+        params: s.params[strat.id] ?? {},
+        cfg: { swingLength: s.swingLength, breakBy: s.breakBy },
+        from: s.days > 0 && coverage ? coverage.last - s.days * 86_400_000 : undefined,
+        riskPct: s.riskPct,
+        initialBalance: s.balance,
+        maxBarsInTrade: s.maxBarsInTrade,
+        enableSwap: s.enableSwap,
+      });
+      setMpResult(res);
+      setSingle(null);
+      setCompare(null);
+      setTuneResult(null);
+      setWfResult(null);
+      setSelected(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setMpRunning(false);
+    }
+  };
+
 
   const request = () => ({
     symbol: s.symbol,
@@ -353,7 +429,7 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
             <div className="flex gap-2">
               <button
                 onClick={() => void run('single')}
-                disabled={running || tuning || !strat || !strat.timeframes.includes(s.tf)}
+                disabled={running || tuning || wfRunning || mpRunning || !strat || !strat.timeframes.includes(s.tf)}
                 className="btn btn-primary flex-1"
               >
                 <Icon name="play" size={14} />
@@ -361,16 +437,34 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
               </button>
               <button
                 onClick={() => void run('compare')}
-                disabled={running || tuning}
+                disabled={running || tuning || wfRunning || mpRunning}
                 title="รันทุกท่าด้วยค่าเริ่มต้นบนข้อมูลชุดเดียวกัน"
                 className="btn"
               >
                 เทียบทุกท่า
               </button>
             </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => void handleRunWf()}
+                disabled={running || tuning || wfRunning || mpRunning || !strat || !strat.timeframes.includes(s.tf)}
+                title="ทดสอบความทนทานด้วยหน้าต่างเวลาเลื่อน (Walk-Forward Analysis)"
+                className="btn flex-1"
+              >
+                {wfRunning ? 'กำลังคำนวณ…' : '🔄 Walk-Forward'}
+              </button>
+              <button
+                onClick={() => void handleRunMp()}
+                disabled={running || tuning || wfRunning || mpRunning || !strat}
+                title="จำลองพอร์ตโฟลิโอหลายคู่เงินพร้อมกัน"
+                className="btn flex-1"
+              >
+                {mpRunning ? 'กำลังคำนวณ…' : '🌐 Multi-Pair'}
+              </button>
+            </div>
             <button
               onClick={() => setTuneModalOpen(true)}
-              disabled={running || tuning || !strat || !strat.timeframes.includes(s.tf)}
+              disabled={running || tuning || wfRunning || mpRunning || !strat || !strat.timeframes.includes(s.tf)}
               title="ค้นหาชุดพารามิเตอร์ที่ให้ผลลัพธ์ดีที่สุด (Grid Search)"
               className="btn w-full"
             >
@@ -552,7 +646,7 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
             </Note>
           )}
 
-          {!single && !compare && !tuneResult && !error && (
+          {!single && !compare && !tuneResult && !wfResult && !mpResult && !error && (
             <Empty icon="backtest" title="เลือกท่าแล้วกดรัน backtest">
               ดูว่าท่าจากไฟล์ริวเรน / Braron ทำกำไรจริงไหมบนข้อมูลย้อนหลัง — จะเริ่มเชื่อได้เมื่อมีอย่างน้อย 100 เทรด, กำไรในช่วง
               out-of-sample และชนะการเข้าแบบสุ่ม หรือใช้ปุ่ม "จูนพารามิเตอร์" เพื่อค้นหาค่าที่ดีที่สุดอัตโนมัติ
@@ -617,6 +711,250 @@ export default function BacktestView({ onOpenChart }: { onOpenChart?: (symbol: s
                 </tbody>
               </table>
             </section>
+          )}
+
+          
+          {wfResult && (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="badge bg-accent/15 font-semibold text-accent">Walk-Forward</span>
+                    <span
+                      className={`badge font-semibold ${
+                        wfResult.result.isRobust ? 'bg-bull/15 text-bull' : 'bg-warn/15 text-warn'
+                      }`}
+                    >
+                      {wfResult.result.isRobust ? 'ROBUST (ทนทาน ✓)' : 'OVERFITTING RISK (ระวัง Overfit ⚠)'}
+                    </span>
+                    <h2 className="text-lg font-semibold leading-tight text-fg">
+                      Walk-Forward Analysis — {wfResult.strategyName}
+                    </h2>
+                  </div>
+                  <Meta
+                    items={[
+                      ['ตลาด', `${wfResult.meta.symbol} ${wfResult.meta.tf}`],
+                      ['จำนวนรอบ', `${wfResult.result.totalWindows} Windows`],
+                      ['ช่วง', `${wfResult.meta.from ? formatThaiDate(wfResult.meta.from) : ''} – ${wfResult.meta.to ? formatThaiDate(wfResult.meta.to) : ''}`],
+                      ['WFE', `${wfResult.result.walkForwardEfficiencyPct}%`],
+                      ['ใช้เวลา', `${(wfResult.meta.durationMs / 1000).toFixed(2)} วิ`],
+                    ]}
+                  />
+                </div>
+                <button onClick={() => void handleRunWf()} disabled={wfRunning} className="btn btn-sm">
+                  <Icon name="play" size={14} />
+                  {wfRunning ? 'กำลังรัน…' : 'รันใหม่'}
+                </button>
+              </div>
+
+              <div className="card grid grid-cols-2 gap-x-6 gap-y-4 px-5 py-4 sm:grid-cols-3 xl:grid-cols-6">
+                <Stat
+                  label="Walk-Forward Efficiency"
+                  value={`${wfResult.result.walkForwardEfficiencyPct}%`}
+                  tone={wfResult.result.walkForwardEfficiencyPct >= 50 ? 'up' : 'down'}
+                  sub={wfResult.result.walkForwardEfficiencyPct >= 50 ? 'ผ่านเกณฑ์ (≥ 50%)' : 'ต่ำกว่าเกณฑ์ (< 50%)'}
+                />
+                <Stat
+                  label="OOS เทรดรวม"
+                  value={wfResult.result.combinedOutOfSampleStats.trades}
+                  sub={`ชนะ ${wfResult.result.combinedOutOfSampleStats.wins} แพ้ ${wfResult.result.combinedOutOfSampleStats.losses}`}
+                />
+                <Stat
+                  label="OOS ชนะ %"
+                  value={fmtPct(wfResult.result.combinedOutOfSampleStats.winRate)}
+                />
+                <Stat
+                  label="OOS เฉลี่ยต่อไม้"
+                  value={fmtR(wfResult.result.combinedOutOfSampleStats.expectancyR)}
+                  tone={wfResult.result.combinedOutOfSampleStats.expectancyR > 0 ? 'up' : 'down'}
+                />
+                <Stat
+                  label="OOS รวม"
+                  value={fmtR(wfResult.result.combinedOutOfSampleStats.totalR, 1)}
+                  tone={wfResult.result.combinedOutOfSampleStats.totalR > 0 ? 'up' : 'down'}
+                />
+                <Stat
+                  label="OOS DD สูงสุด"
+                  value={`${wfResult.result.combinedOutOfSampleStats.maxDrawdownR.toFixed(1)}R`}
+                  sub={`${wfResult.result.combinedOutOfSampleStats.maxDrawdownPct.toFixed(1)}%`}
+                />
+              </div>
+
+              <div className="card p-4">
+                <div className="mb-2 flex items-center justify-between text-xs text-muted">
+                  <span className="text-[13px] font-semibold text-fg">เส้น Out-of-Sample Equity สะสม (Walk-Forward)</span>
+                  <span className="text-faint">สะท้อนผลการเทรดบนข้อมูลที่ยังไม่เคยเห็นในอดีตอย่างต่อเนื่อง</span>
+                </div>
+                <div className="h-64">
+                  <EquityChart points={wfResult.result.equity} splitTime={null} mode="r" />
+                </div>
+              </div>
+
+              <section className="card overflow-hidden">
+                <div className="border-b border-line px-5 py-3">
+                  <h3 className="text-[14px] font-semibold text-fg">รายละเอียดแต่ละหน้าต่างเลื่อน (Sliding Windows)</h3>
+                  <p className="text-xs text-muted">เปรียบเทียบผลลัพธ์ In-Sample (Train) กับ Out-of-Sample (Test)</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th className="pl-5">รอบ</th>
+                        <th>ช่วงทดสอบ (OOS)</th>
+                        <th className="text-right">Train ไม้</th>
+                        <th className="text-right">Train Win%</th>
+                        <th className="text-right">Train เฉลี่ย</th>
+                        <th className="text-right">Test ไม้</th>
+                        <th className="text-right">Test Win%</th>
+                        <th className="text-right">Test เฉลี่ย</th>
+                        <th className="text-right">Test รวม</th>
+                        <th className="pr-5 text-right">WFE (%)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {wfResult.result.steps.map((st) => (
+                        <tr key={st.window.index} className="hover:bg-hover">
+                          <td className="pl-5 font-semibold">#{st.window.index + 1}</td>
+                          <td className="text-xs tabular-nums text-muted">
+                            {formatThaiDate(st.window.testStartTime)} – {formatThaiDate(st.window.testEndTime)}
+                          </td>
+                          <td className="text-right tabular-nums">{st.inSampleTradesCount}</td>
+                          <td className="text-right tabular-nums">{fmtPct(st.inSample.winRate)}</td>
+                          <td className={`text-right font-medium tabular-nums ${tone(st.inSample.expectancyR)}`}>
+                            {fmtR(st.inSample.expectancyR)}
+                          </td>
+                          <td className="text-right font-semibold tabular-nums">{st.outOfSampleTradesCount}</td>
+                          <td className="text-right tabular-nums">{fmtPct(st.outOfSample.winRate)}</td>
+                          <td className={`text-right font-semibold tabular-nums ${tone(st.outOfSample.expectancyR)}`}>
+                            {fmtR(st.outOfSample.expectancyR)}
+                          </td>
+                          <td className="text-right tabular-nums">{fmtR(st.outOfSample.totalR, 1)}</td>
+                          <td
+                            className={`pr-5 text-right font-semibold tabular-nums ${
+                              st.efficiencyPct >= 50 ? 'text-bull' : st.efficiencyPct > 0 ? 'text-warn' : 'text-bear'
+                            }`}
+                          >
+                            {st.efficiencyPct}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {mpResult && (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="badge bg-bull/15 font-semibold text-bull">Multi-Pair Portfolio</span>
+                    <h2 className="text-lg font-semibold leading-tight text-fg">
+                      พอร์ตโฟลิโอหลายคู่เงิน — {mpResult.meta.strategyName}
+                    </h2>
+                  </div>
+                  <Meta
+                    items={[
+                      ['คู่เงิน', mpResult.meta.symbols.join(', ')],
+                      ['Timeframe', mpResult.meta.tf],
+                      ['Diversification', `${mpResult.result.diversificationRatio}x`],
+                      ['ใช้เวลา', `${(mpResult.meta.durationMs / 1000).toFixed(2)} วิ`],
+                    ]}
+                  />
+                </div>
+                <button onClick={() => void handleRunMp()} disabled={mpRunning} className="btn btn-sm">
+                  <Icon name="play" size={14} />
+                  {mpRunning ? 'กำลังรัน…' : 'รันใหม่'}
+                </button>
+              </div>
+
+              <div className="card grid grid-cols-2 gap-x-6 gap-y-4 px-5 py-4 sm:grid-cols-3 xl:grid-cols-6">
+                <Stat
+                  label="เทรดรวมทั้งพอร์ต"
+                  value={mpResult.result.portfolioStats.trades}
+                  sub={`ชนะ ${mpResult.result.portfolioStats.wins} แพ้ ${mpResult.result.portfolioStats.losses}`}
+                />
+                <Stat
+                  label="Win Rate พอร์ต"
+                  value={fmtPct(mpResult.result.portfolioStats.winRate)}
+                />
+                <Stat
+                  label="เฉลี่ยต่อไม้"
+                  value={fmtR(mpResult.result.portfolioStats.expectancyR)}
+                  tone={mpResult.result.portfolioStats.expectancyR > 0 ? 'up' : 'down'}
+                />
+                <Stat
+                  label="ผลตอบแทนรวม"
+                  value={fmtR(mpResult.result.portfolioStats.totalR, 1)}
+                  tone={mpResult.result.portfolioStats.totalR > 0 ? 'up' : 'down'}
+                />
+                <Stat
+                  label="Max Drawdown พอร์ต"
+                  value={`${mpResult.result.portfolioStats.maxDrawdownR.toFixed(1)}R`}
+                  sub={`${mpResult.result.portfolioStats.maxDrawdownPct.toFixed(1)}%`}
+                />
+                <Stat
+                  label="Diversification Benefit"
+                  value={`${mpResult.result.diversificationRatio}x`}
+                  tone={mpResult.result.diversificationRatio > 1.2 ? 'up' : undefined}
+                  sub="ลด DD รวมเทียบกับแยกเดี่ยว"
+                />
+              </div>
+
+              <div className="card p-4">
+                <div className="mb-2 flex items-center justify-between text-xs text-muted">
+                  <span className="text-[13px] font-semibold text-fg">เส้น Portfolio Equity รวมทุกคู่เงิน</span>
+                  <div className="seg">
+                    {(['r', 'balance'] as const).map((m) => (
+                      <button key={m} onClick={() => setEquityMode(m)} aria-pressed={equityMode === m}>
+                        {m === 'r' ? 'R' : 'เงิน'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="h-64">
+                  <EquityChart points={mpResult.result.portfolioEquity} splitTime={null} mode={equityMode} />
+                </div>
+              </div>
+
+              <section className="card overflow-hidden">
+                <div className="border-b border-line px-5 py-3">
+                  <h3 className="text-[14px] font-semibold text-fg">ผลงานแยกตามคู่เงิน (Symbol Breakdown)</h3>
+                </div>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th className="pl-5">คู่เงิน</th>
+                      <th className="text-right">เทรด</th>
+                      <th className="text-right">ชนะ %</th>
+                      <th className="text-right">เฉลี่ย / ไม้</th>
+                      <th className="text-right">รวม (R)</th>
+                      <th className="text-right">Profit Factor</th>
+                      <th className="text-right">Max DD</th>
+                      <th className="pr-5 text-right">เงินปลายทาง</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mpResult.result.symbolSummaries.map((sym) => (
+                      <tr key={sym.symbol} className="hover:bg-hover">
+                        <td className="pl-5 font-semibold text-fg">{sym.symbol}</td>
+                        <td className="text-right tabular-nums">{sym.tradesCount}</td>
+                        <td className="text-right tabular-nums">{fmtPct(sym.winRate)}</td>
+                        <td className={`text-right font-medium tabular-nums ${tone(sym.expectancyR)}`}>
+                          {fmtR(sym.expectancyR)}
+                        </td>
+                        <td className="text-right font-semibold tabular-nums">{fmtR(sym.totalR, 1)}</td>
+                        <td className="text-right tabular-nums">{sym.profitFactor ? sym.profitFactor.toFixed(2) : '-'}</td>
+                        <td className="text-right tabular-nums text-bear">{sym.maxDrawdownR.toFixed(1)}R</td>
+                        <td className="pr-5 text-right tabular-nums text-fg">{sym.finalBalance.toFixed(0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            </div>
           )}
 
           {tuneResult && (

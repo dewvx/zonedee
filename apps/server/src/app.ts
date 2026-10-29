@@ -16,9 +16,13 @@ import {
   backtestCompare,
   backtestOne,
   backtestTune,
+  backtestWalkForward,
+  backtestMultiPair,
   strategyList,
   type BacktestRequest,
   type TuneRequest,
+  type WalkForwardRequest,
+  type MultiPairRequest,
 } from './backtest';
 import type { ContractInfo } from './contract';
 import { JournalError, type JournalInput, type JournalStore } from './journal';
@@ -360,6 +364,40 @@ export function createApp(deps: AppDeps) {
    * POST /api/backtest/tune  body: TuneRequest (ดู src/backtest.ts)
    * รัน Grid Search Optimization หาค่าพารามิเตอร์ที่ดีที่สุดของท่า
    */
+
+  /**
+   * POST /api/backtest/walk-forward  body: WalkForwardRequest (ดู src/backtest.ts)
+   * รัน Walk-Forward Analysis แบ่งหน้าต่างเวลาเลื่อนไปเรื่อยๆ เพื่อตรวจสอบความทนทาน
+   */
+  app.post('/api/backtest/walk-forward', (req, res) => {
+    const body = (req.body ?? {}) as WalkForwardRequest;
+    const cfg = find(body.symbol);
+    if (!cfg) {
+      res.status(404).json({ error: `ไม่รู้จัก symbol: ${body.symbol}` });
+      return;
+    }
+    try {
+      res.json(backtestWalkForward(store, cfg, body));
+    } catch (err) {
+      const status = err instanceof BacktestError ? err.status : 500;
+      res.status(status).json({ error: (err as Error).message });
+    }
+  });
+
+  /**
+   * POST /api/backtest/multi-pair  body: MultiPairRequest (ดู src/backtest.ts)
+   * รัน Backtest รวมหลายคู่เงินเข้าเป็นพอร์ตโฟลิโอเดียว
+   */
+  app.post('/api/backtest/multi-pair', (req, res) => {
+    const body = (req.body ?? {}) as MultiPairRequest;
+    try {
+      res.json(backtestMultiPair(store, listSymbols(), body));
+    } catch (err) {
+      const status = err instanceof BacktestError ? err.status : 500;
+      res.status(status).json({ error: (err as Error).message });
+    }
+  });
+
   app.post('/api/backtest/tune', (req, res) => {
     const body = (req.body ?? {}) as TuneRequest;
     const cfg = find(body.symbol);

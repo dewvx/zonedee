@@ -7,6 +7,8 @@ import {
   isTimeframe,
   runBacktest,
   runGridSearch,
+  runWalkForward,
+  runMultiPair,
   type BacktestResult,
   type Candle,
   type DetectorConfig,
@@ -15,6 +17,9 @@ import {
   type ParamValue,
   type Stats,
   type Timeframe,
+  type WalkForwardResult,
+  type MultiPairResult,
+  type MultiPairSymbolInput,
 } from '@zonedee/core';
 import type { CandleStore } from './store';
 import type { SymbolConfig } from './symbols';
@@ -98,6 +103,46 @@ export interface TuneRequest extends BacktestRequest {
   maxCombinations?: number;
   topBaselineRuns?: number;
   minSignificantTrades?: number;
+}
+
+
+export interface WalkForwardRequest extends BacktestRequest {
+  trainDays?: number;
+  testDays?: number;
+  stepDays?: number;
+  windowsCount?: number;
+}
+
+export interface WalkForwardResponse {
+  meta: BacktestMeta;
+  strategy: string;
+  strategyName: string;
+  result: WalkForwardResult;
+}
+
+export interface MultiPairRequest {
+  symbols: string[];
+  tf: string;
+  strategy: string;
+  params?: Record<string, ParamValue>;
+  cfg?: Partial<DetectorConfig>;
+  from?: number;
+  to?: number;
+  riskPct?: number;
+  initialBalance?: number;
+  maxBarsInTrade?: number;
+  enableSwap?: boolean;
+}
+
+export interface MultiPairResponse {
+  meta: {
+    symbols: string[];
+    tf: Timeframe;
+    strategy: string;
+    strategyName: string;
+    durationMs: number;
+  };
+  result: MultiPairResult;
 }
 
 export interface TuneResponse {
@@ -291,6 +336,116 @@ export function backtestTune(store: CandleStore, cfg: SymbolConfig, req: TuneReq
 }
 
 /** รายชื่อท่าสำหรับ UI (ไม่มีฟังก์ชัน) */
+
+/** รัน Walk-Forward Analysis แบ่งหน้าต่างเวลาเลื่อนไปเรื่อยๆ */
+export function backtestWalkForward(
+  store: CandleStore,
+  cfg: SymbolConfig,
+  req: WalkForwardRequest,
+): WalkForwardResponse {
+  const started = Date.now();
+  const d = load(store, cfg, req);
+  const strat = getStrategy(req.strategy);
+  if (!strat) throw new BacktestError(`ไม่รู้จักท่า: ${req.strategy} (มี: ${STRATEGIES.map((s) => s.id).join(', ')})`);
+
+  const result = runWalkForward(d.candles, strat, {
+    tf: d.tf,
+    spread: d.spread,
+    maxBarsInTrade: req.maxBarsInTrade ?? 0,
+    fine: d.fine ? { candles: d.fine, tf: 'M1' } : undefined,
+    swap: d.swap,
+    trainDays: req.trainDays,
+    testDays: req.testDays,
+    stepDays: req.stepDays,
+    windowsCount: req.windowsCount,
+    riskPct: req.riskPct ?? RUN_DEFAULTS.riskPct,
+    initialBalance: req.initialBalance ?? RUN_DEFAULTS.initialBalance,
+    params: req.params,
+    cfg: req.cfg,
+  });
+
+  return {
+    meta: {
+      ...baseMeta(cfg, d, started),
+      strategy: strat.id,
+      strategyName: strat.name,
+      signals: result.combinedOutOfSampleTrades.length,
+    },
+    strategy: strat.id,
+    strategyName: strat.name,
+    result,
+  };
+}
+
+/** รัน Backtest รวมหลายคู่เงินเข้าเป็นพอร์ตโฟลิโอเดียว (Multi-Pair Portfolio) */
+export function backtestMultiPair(
+  store: CandleStore,
+  symbolsList: SymbolConfig[],
+  req: MultiPairRequest,
+): MultiPairResponse {
+  const started = Date.now();
+  const strat = getStrategy(req.strategy);
+  if (!strat) throw new BacktestError(`ไม่รู้จักท่า: ${req.strategy} (มี: ${STRATEGIES.map((s) => s.id).join(', ')})`);
+
+  if (!req.symbols || req.symbols.length === 0) {
+    throw new BacktestError('กรุณาเลือก symbol อย่างน้อย 1 รายการ');
+  }
+
+  const inputs: MultiPairSymbolInput[] = [];
+
+  for (const symName of req.symbols) {
+    const cfg = symbolsList.find((s) => s.symbol === symName.toUpperCase());
+    if (!cfg) continue;
+
+    try {
+      const d = load(store, cfg, {
+        symbol: cfg.symbol,
+        tf: req.tf,
+        strategy: req.strategy,
+        from: req.from,
+        to: req.to,
+        enableSwap: req.enableSwap,
+      });
+
+      const signals = strat.generate({ candles: d.candles, tf: d.tf, cfg: req.cfg, params: req.params });
+      inputs.push({
+        symbol: cfg.symbol,
+        candles: d.candles,
+        signals,
+        options: {
+          tf: d.tf,
+          spread: d.spread,
+          maxBarsInTrade: req.maxBarsInTrade ?? 0,
+          fine: d.fine ? { candles: d.fine, tf: 'M1' } : undefined,
+          swap: d.swap,
+        },
+      });
+    } catch {
+      // ข้ามถ้าไม่มีข้อมูลหรือโหลดไม่พอ
+    }
+  }
+
+  if (inputs.length === 0) {
+    throw new BacktestError('ไม่มี symbol ใดที่มีข้อมูลเพียงพอสำหรับการ backtest', 422);
+  }
+
+  const result = runMultiPair(inputs, {
+    riskPct: req.riskPct ?? RUN_DEFAULTS.riskPct,
+    initialBalance: req.initialBalance ?? RUN_DEFAULTS.initialBalance,
+  });
+
+  return {
+    meta: {
+      symbols: inputs.map((i) => i.symbol),
+      tf: req.tf as Timeframe,
+      strategy: strat.id,
+      strategyName: strat.name,
+      durationMs: Date.now() - started,
+    },
+    result,
+  };
+}
+
 export const strategyList = () =>
   STRATEGIES.map(({ id, name, source, description, timeframes, params }) => ({
     id,

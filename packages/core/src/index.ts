@@ -23,6 +23,8 @@ export * from './backtest/stats';
 export * from './backtest/baseline';
 export * from './backtest/run';
 export * from './backtest/grid-search';
+export * from './backtest/walk-forward';
+export * from './backtest/multi-pair';
 export * from './strategies';
 export * from './risk/r-multiple';
 export * from './indicators/sma';

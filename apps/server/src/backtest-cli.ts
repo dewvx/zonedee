@@ -9,7 +9,7 @@
  */
 import { parseArgs } from 'node:util';
 import type { ParamValue, Stats } from '@zonedee/core';
-import { BacktestError, backtestCompare, backtestOne, backtestTune, strategyList } from './backtest';
+import { BacktestError, backtestCompare, backtestOne, backtestTune, backtestWalkForward, backtestMultiPair, strategyList } from './backtest';
 import { CandleStore, DEFAULT_DB_PATH } from './store';
 import { UserSymbolStore, createSymbolRegistry } from './user-symbols';
 
@@ -30,9 +30,45 @@ const { values } = parseArgs({
     balance: { type: 'string' },
     swing: { type: 'string' },
     'no-swap': { type: 'boolean', default: false },
+    wf: { type: 'boolean', default: false },
+    train: { type: 'string' },
+    test: { type: 'string' },
+    windows: { type: 'string' },
+    multipair: { type: 'boolean', default: false },
+    symbols: { type: 'string' },
     trades: { type: 'boolean', default: false },
+    help: { type: 'boolean', short: 'h', default: false },
   },
 });
+
+if (values.help) {
+  console.log(`
+การใช้งาน backtest CLI:
+  npm run backtest -- [options]
+
+ตัวเลือก:
+  -s, --symbol <symbol>    คู่เงิน/หุ้น (ค่าเริ่มต้น: XAUUSD)
+  -t, --tf <timeframe>     Timeframe เช่น M5, M15, H1, D1 (ค่าเริ่มต้น: M15)
+  --strategy <strategy>    ชื่อท่า เช่น ema-cross, sk-fibo, smc-breaker
+  --all                    รันเปรียบเทียบทุกท่าพร้อมกัน
+  --tune                   ค้นหาชุดพารามิเตอร์ที่ดีที่สุด (Grid Search)
+  --grid <param=v1,v2>     ระบุช่วงค่าของ Grid Search
+  --wf                     วิเคราะห์ความทนทานแบบ Walk-Forward
+  --windows <n>            จำนวนรอบของ Walk-Forward (เช่น 3, 4, 5)
+  --train <days>           จำนวนวันของ In-Sample Train (เช่น 180)
+  --test <days>            จำนวนวันของ Out-of-Sample Test (เช่น 60)
+  --multipair              จำลองพอร์ตโฟลิโอหลายคู่เงินพร้อมกัน
+  --symbols <s1,s2,...>    คู่เงินสำหรับ Multi-Pair (เช่น XAUUSD,EURUSD,GBPUSD)
+  --spread <points>        สเปรด (points)
+  --risk <pct>             ความเสี่ยงต่อไม้ (% ของพอร์ต เช่น 1)
+  --balance <amount>       เงินทุนเริ่มต้น (เช่น 1000)
+  --no-swap                ปิดการคิดค่า Swap ข้ามคืน
+  --trades                 พิมพ์รายการเทรดทั้งหมด
+  --list                   ดูรายชื่อท่าและพารามิเตอร์ทั้งหมด
+  -h, --help               แสดงคู่มือการใช้งานนี้
+  `);
+  process.exit(0);
+}
 
 if (values.list) {
   for (const s of strategyList()) {
@@ -92,7 +128,42 @@ const day = (t: number | null) => (t ? new Date(t).toISOString().slice(0, 16).re
 
 const store = new CandleStore();
 try {
-  if (values.tune) {
+  if (values.wf) {
+    const r = backtestWalkForward(store, cfg, {
+      ...req,
+      trainDays: values.train ? Number(values.train) : undefined,
+      testDays: values.test ? Number(values.test) : undefined,
+      windowsCount: values.windows ? Number(values.windows) : undefined,
+    });
+    console.log(`\n🔄 Walk-Forward Analysis: ${r.strategyName} · ${r.meta.symbol} ${r.meta.tf} (${r.result.totalWindows} windows)`);
+    console.log(`Walk-Forward Efficiency (WFE): ${r.result.walkForwardEfficiencyPct}% [${r.result.isRobust ? 'ROBUST ✓' : 'OVERFITTING ⚠'}]`);
+    console.log(`Combined Out-of-Sample: ${line(r.result.combinedOutOfSampleStats)}\n`);
+    console.log('รายละเอียดแต่ละรอบหน้าต่าง:');
+    for (const step of r.result.steps) {
+      const w = step.window;
+      console.log(`รอบ #${w.index + 1} [${day(w.testStartTime)} → ${day(w.testEndTime)}]: Train ${step.inSampleTradesCount} ไม้ (${f(step.inSample.expectancyR)}R) → Test ${step.outOfSampleTradesCount} ไม้ (${f(step.outOfSample.expectancyR)}R) | WFE ${step.efficiencyPct}%`);
+    }
+  } else if (values.multipair) {
+    const symList = (values as any).symbols ? ((values as any).symbols as string).split(',').map((x: string) => x.trim().toUpperCase()) : ['XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY'];
+    const r = backtestMultiPair(store, createSymbolRegistry(userSymbols).list(), {
+      symbols: symList,
+      tf: values.tf!,
+      strategy: values.strategy!,
+      params,
+      cfg: req.cfg,
+      from: req.from,
+      to: req.to,
+      riskPct: req.riskPct,
+      initialBalance: req.initialBalance,
+      enableSwap: req.enableSwap,
+    });
+    console.log(`\n🌐 Multi-Pair Portfolio: ${r.meta.strategyName} · ${r.meta.symbols.join(', ')} (${r.meta.tf}) · Diversification Ratio: ${r.result.diversificationRatio}x`);
+    console.log(`ผลรวมพอร์ตโฟลิโอ: ${line(r.result.portfolioStats)}\n`);
+    console.log('ผลตอบแทนแยกตามคู่เงิน:');
+    for (const sym of r.result.symbolSummaries) {
+      console.log(`  ${sym.symbol.padEnd(8)} ${line(sym.stats)}`);
+    }
+  } else if (values.tune) {
     const r = backtestTune(store, cfg, {
       ...req,
       grid: Object.keys(customGrid).length > 0 ? customGrid : undefined,

@@ -203,6 +203,50 @@ describe('backtest API', () => {
     expect(body.rows.length).toBe(4);
     expect(body.rows[0].expectancyR).toBeDefined();
   });
+  it('POST /api/backtest/walk-forward → รัน Walk-Forward Analysis สำเร็จ', async () => {
+    seed();
+    const wfPost = (body: unknown) =>
+      fetch(`${base}/api/backtest/walk-forward`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+    const res = await wfPost({
+      symbol: 'XAUUSD',
+      tf: 'M5',
+      strategy: 'ema-cross',
+      windowsCount: 3,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Json;
+    expect(body.strategy).toBe('ema-cross');
+    expect(body.result.totalWindows).toBeGreaterThanOrEqual(2);
+    expect(body.result.steps.length).toBeGreaterThanOrEqual(2);
+    expect(body.result.walkForwardEfficiencyPct).toBeDefined();
+  });
+
+  it('POST /api/backtest/multi-pair → รัน Multi-Pair Portfolio รวมหลายคู่เงิน', async () => {
+    seed();
+    const mpPost = (body: unknown) =>
+      fetch(`${base}/api/backtest/multi-pair`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+    const res = await mpPost({
+      symbols: ['XAUUSD'],
+      tf: 'M5',
+      strategy: 'ema-cross',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Json;
+    expect(body.meta.symbols).toEqual(['XAUUSD']);
+    expect(body.result.symbolSummaries.length).toBe(1);
+    expect(body.result.portfolioStats).toBeDefined();
+  });
+
 });
 
 describe('GET /api/candles?after', () => {

@@ -18,6 +18,8 @@ import type {
   StockSummaryResult,
   StockNewsItem,
   StockNewsSummary,
+  WalkForwardResult,
+  MultiPairResult,
 } from '@zonedee/core';
 
 export type DataSourceName = 'dukascopy' | 'yahoo' | 'mt5';
@@ -182,6 +184,52 @@ const postJson = <T>(url: string, body: unknown) =>
   request<T>(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 export const runBacktest = (req: BacktestRequest) => postJson<BacktestResponse>('/api/backtest', req);
+
+export interface WalkForwardRequest extends BacktestRequest {
+  trainDays?: number;
+  testDays?: number;
+  stepDays?: number;
+  windowsCount?: number;
+}
+
+export interface WalkForwardResponse {
+  meta: BacktestMeta;
+  strategy: string;
+  strategyName: string;
+  result: WalkForwardResult;
+}
+
+export const runWalkForwardApi = (req: WalkForwardRequest) =>
+  postJson<WalkForwardResponse>('/api/backtest/walk-forward', req);
+
+export interface MultiPairRequest {
+  symbols: string[];
+  tf: Timeframe;
+  strategy: string;
+  params?: Record<string, ParamValue>;
+  cfg?: Partial<DetectorConfig>;
+  from?: number;
+  to?: number;
+  riskPct?: number;
+  initialBalance?: number;
+  maxBarsInTrade?: number;
+  enableSwap?: boolean;
+}
+
+export interface MultiPairResponse {
+  meta: {
+    symbols: string[];
+    tf: Timeframe;
+    strategy: string;
+    strategyName: string;
+    durationMs: number;
+  };
+  result: MultiPairResult;
+}
+
+export const runMultiPairApi = (req: MultiPairRequest) =>
+  postJson<MultiPairResponse>('/api/backtest/multi-pair', req);
+
 export const runCompare = (req: Omit<BacktestRequest, 'strategy'>) =>
   postJson<CompareResponse>('/api/backtest', { ...req, strategy: 'all' });
 

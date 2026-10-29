@@ -14,9 +14,9 @@
 | **TASK-02** | Hotkeys / คีย์ลัดบนหน้ากราฟและโหมด Replay | UI / UX Usability | สูง | ✅ เสร็จสิ้น |
 | **TASK-03** | ปฏิทินบันทึกการเทรดใน Journal (Trade Calendar) | Trading Journal | กลาง | ✅ เสร็จสิ้น |
 | **TASK-04** | ท่าเทรดใหม่: ท่า 4 AMD (Accumulation, Manipulation, Distribution) | SMC Strategy | กลาง-สูง | ✅ เสร็จสิ้น |
-| **TASK-05** | เครื่องมือจูนพารามิเตอร์อัตโนมัติ (Grid Search Optimization) | Backtest Engine | กลาง | 🟡 รอดำเนินการ |
-| **TASK-06** | คำนวณต้นทุน Swap ข้ามคืน (Overnight Swap) | Risk & Backtest | ปานกลาง | 🟡 รอดำเนินการ |
-| **TASK-07** | Walk-Forward Analysis & Multi-Pair Backtesting | Advanced Backtest | ปานกลาง | 🟡 รอดำเนินการ |
+| **TASK-05** | เครื่องมือจูนพารามิเตอร์อัตโนมัติ (Grid Search Optimization) | Backtest Engine | กลาง | ✅ เสร็จสิ้น |
+| **TASK-06** | คำนวณต้นทุน Swap ข้ามคืน (Overnight Swap) | Risk & Backtest | ปานกลาง | ✅ เสร็จสิ้น |
+| **TASK-07** | Walk-Forward Analysis & Multi-Pair Backtesting | Advanced Backtest | ปานกลาง | ✅ เสร็จสิ้น |
 
 ---
 
@@ -161,11 +161,31 @@
 
 ---
 
-### TASK-07: Walk-Forward Analysis & Multi-Pair Backtesting
-- **เป้าหมาย**: ทดสอบความทนทานของกลยุทธ์กับหลายตลาดและหลายช่วงเวลา
+### TASK-07: Walk-Forward Analysis & Multi-Pair Backtesting [เสร็จสมบูรณ์]
+- **เป้าหมาย**: ทดสอบความทนทานของกลยุทธ์กับหลายตลาดและหลายช่วงเวลา ป้องกัน Overfitting
 - **ข้อกำหนด (Specs)**:
-  1. **Walk-Forward**: แบ่งข้อมูลเป็นหน้าต่างเลื่อน (Sliding Windows) เช่น Train 6 เดือน / Test 2 เดือน เลื่อนไปเรื่อยๆ เพื่อตรวจสอบว่าท่าเทรดยังกำไรสม่ำเสมอหรือไม่
-  2. **Multi-Pair**: รันท่าเดียวพร้อมกันกับหลายคู่เงิน (เช่น XAUUSD, EURUSD, GBPUSD, USDJPY) แล้วรวมเป็นพอร์ตโฟลิโอเดียว
+  1. **Walk-Forward Analysis (Sliding Windows)**:
+     - แบ่งข้อมูลย้อนหลังเป็นหน้าต่างเวลาเลื่อนตาม `windowsCount` หรือ `trainDays` (In-Sample) และ `testDays` (Out-of-Sample)
+     - คำนวณสัญญาณโดยมี Lookback Warmup Buffer 100 แท่ง ป้องกัน indicator bias
+     - คำนวณ Walk-Forward Efficiency (WFE %) = (Expectancy_OOS / Expectancy_IS) * 100
+     - สร้างเส้น Equity Curve OOS รวมต่อเนื่อง และประเมินความทนทาน (WFE >= 50% และ OOS Expectancy > 0)
+  2. **Multi-Pair Portfolio Backtesting**:
+     - รองรับการรันกลยุทธ์พร้อมกันหลายคู่เงิน (เช่น XAUUSD, EURUSD, GBPUSD, USDJPY)
+     - รวมรายการเทรดทั้งหมดตามลำดับเวลาจริง คำนวณสถิติรวมของพอร์ตโฟลิโอและ Equity Curve รวม
+     - คำนวณอัตราส่วนกระจายความเสี่ยง (Diversification Benefit Ratio = Sum(MaxDD_i) / Portfolio_MaxDD)
+     - แสดงตารางเปรียบเทียบผลงานแยกตามรายคู่เงิน (Symbol Breakdown)
+  3. **REST API & CLI**:
+     - Endpoints: `POST /api/backtest/walk-forward` และ `POST /api/backtest/multi-pair`
+     - CLI: `npm run backtest -- --wf --train 180 --test 60` และ `--multipair --symbols XAUUSD,EURUSD`
+  4. **Web UI (BacktestView)**:
+     - แผงควบคุมด้านข้าง: เลือกจำนวนรอบ WF, สลับคู่เงินใน Multi-Pair ด้วยชิป
+     - แท็บแสดงผล WF: KPI Cards (WFE %, IS vs OOS, Robustness), OOS Equity Curve, ตารางแจกแจงแต่ละ Window
+     - แท็บแสดงผล Multi-Pair: Portfolio KPIs, Diversification Ratio, Portfolio Equity Curve, Symbol Breakdown Table
+- **ไฟล์ที่สร้าง/แก้ไข**:
+  - `packages/core/src/backtest/walk-forward.ts` & `test/walk-forward.test.ts`
+  - `packages/core/src/backtest/multi-pair.ts` & `test/multi-pair.test.ts`
+  - `apps/server/src/backtest.ts`, `apps/server/src/app.ts`, `apps/server/src/backtest-cli.ts` & `test/api.test.ts`
+  - `apps/web/src/api.ts` & `apps/web/src/views/BacktestView.tsx`
 
 ---
 
